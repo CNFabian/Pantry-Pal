@@ -6,6 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		12EEF94B2E035C05003D466E /* FirebaseAI in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF94A2E035C05003D466E /* FirebaseAI */; };
+		12EEF94D2E035C05003D466E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF94C2E035C05003D466E /* FirebaseAuth */; };
+		12EEF94F2E035C06003D466E /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF94E2E035C05003D466E /* FirebaseFirestore */; };
+		12EEF9512E035C06003D466E /* FirebaseInAppMessaging-Beta in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF9502E035C06003D466E /* FirebaseInAppMessaging-Beta */; };
+		12EEF9532E035C06003D466E /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF9522E035C06003D466E /* FirebaseMessaging */; };
+		12EEF9552E035C06003D466E /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF9542E035C06003D466E /* FirebaseStorage */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		126BBA802E034AE0006EEF32 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,9 +38,30 @@
 		126BBA892E034AE0006EEF32 /* Pantry PalUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Pantry PalUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		12EEF9472E035A75003D466E /* Exceptions for "Pantry Pal" folder in "Pantry PalTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"GoogleService-Info.plist",
+			);
+			target = 126BBA7E2E034AE0006EEF32 /* Pantry PalTests */;
+		};
+		12EEF9482E035A75003D466E /* Exceptions for "Pantry Pal" folder in "Pantry PalUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"GoogleService-Info.plist",
+			);
+			target = 126BBA882E034AE0006EEF32 /* Pantry PalUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		126BBA6F2E034ADD006EEF32 /* Pantry Pal */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				12EEF9472E035A75003D466E /* Exceptions for "Pantry Pal" folder in "Pantry PalTests" target */,
+				12EEF9482E035A75003D466E /* Exceptions for "Pantry Pal" folder in "Pantry PalUITests" target */,
+			);
 			path = "Pantry Pal";
 			sourceTree = "<group>";
 		};
@@ -52,6 +82,12 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				12EEF94B2E035C05003D466E /* FirebaseAI in Frameworks */,
+				12EEF94D2E035C05003D466E /* FirebaseAuth in Frameworks */,
+				12EEF9532E035C06003D466E /* FirebaseMessaging in Frameworks */,
+				12EEF94F2E035C06003D466E /* FirebaseFirestore in Frameworks */,
+				12EEF9512E035C06003D466E /* FirebaseInAppMessaging-Beta in Frameworks */,
+				12EEF9552E035C06003D466E /* FirebaseStorage in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +148,12 @@
 			);
 			name = "Pantry Pal";
 			packageProductDependencies = (
+				12EEF94A2E035C05003D466E /* FirebaseAI */,
+				12EEF94C2E035C05003D466E /* FirebaseAuth */,
+				12EEF94E2E035C05003D466E /* FirebaseFirestore */,
+				12EEF9502E035C06003D466E /* FirebaseInAppMessaging-Beta */,
+				12EEF9522E035C06003D466E /* FirebaseMessaging */,
+				12EEF9542E035C06003D466E /* FirebaseStorage */,
 			);
 			productName = "Pantry Pal";
 			productReference = 126BBA6D2E034ADD006EEF32 /* Pantry Pal.app */;
@@ -195,6 +237,9 @@
 			);
 			mainGroup = 126BBA642E034ADD006EEF32;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 126BBA6E2E034ADD006EEF32 /* Products */;
 			projectDirPath = "";
@@ -550,6 +595,50 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.14.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		12EEF94A2E035C05003D466E /* FirebaseAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAI;
+		};
+		12EEF94C2E035C05003D466E /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		12EEF94E2E035C05003D466E /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		12EEF9502E035C06003D466E /* FirebaseInAppMessaging-Beta */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = "FirebaseInAppMessaging-Beta";
+		};
+		12EEF9522E035C06003D466E /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+		12EEF9542E035C06003D466E /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 126BBA652E034ADD006EEF32 /* Project object */;
 }
