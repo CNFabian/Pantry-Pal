@@ -31,7 +31,9 @@ class AuthenticationService: ObservableObject {
             DispatchQueue.main.async {
                 self?.isAuthenticated = user != nil
                 if let user = user {
-                    self?.fetchUserData(uid: user.uid)
+                    Task {
+                        await self?.fetchUserData(uid: user.uid)
+                    }
                 } else {
                     self?.user = nil
                 }
@@ -49,6 +51,10 @@ class AuthenticationService: ObservableObject {
         do {
             let result = try await Auth.auth().signIn(withEmail: email, password: password)
             await fetchUserData(uid: result.user.uid)
+            
+            DispatchQueue.main.async {
+                self.isLoading = false
+            }
         } catch {
             DispatchQueue.main.async {
                 self.errorMessage = self.handleAuthError(error)

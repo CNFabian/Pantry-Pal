@@ -8,31 +8,46 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var firestoreService: FirestoreService
+    @State private var showingRegister = false
     
     var body: some View {
         Group {
             if authService.isAuthenticated {
                 MainTabView()
             } else {
-                AuthenticationView()
+                NavigationView {
+                    if showingRegister {
+                        RegisterView()
+                            .environmentObject(authService)
+                            .navigationBarBackButtonHidden(true)
+                            .onReceive(NotificationCenter.default.publisher(for: .showLogin)) { _ in
+                                   showingRegister = false
+                               }
+                            .toolbar {
+                                ToolbarItem(placement: .navigationBarLeading) {
+                                    Button("Back") {
+                                        showingRegister = false
+                                    }
+                                    .foregroundColor(.primaryOrange)
+                                }
+                            }
+                    } else {
+                        LoginView()
+                            .environmentObject(authService)
+                            .onReceive(NotificationCenter.default.publisher(for: .showRegister)) { _ in
+                                showingRegister = true
+                            }
+                    }
+                }
             }
         }
     }
 }
 
-// Temporary auth view for testing
-struct AuthenticationView: View {
-    var body: some View {
-        VStack {
-            Text("Authentication Required")
-                .font(.title)
-                .foregroundColor(.primaryOrange)
-            
-            Text("We'll build the login screen next!")
-                .foregroundColor(.textSecondary)
-        }
-        .themedBackground()
-    }
+// Add this extension to handle navigation
+extension Notification.Name {
+    static let showRegister = Notification.Name("showRegister")
+    static let showLogin = Notification.Name("showLogin")
 }
 
 // Temporary main view for testing
