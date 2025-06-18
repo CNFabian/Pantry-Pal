@@ -11,6 +11,13 @@ import Combine
 class FirestoreService: ObservableObject {
     private let db = Firestore.firestore()
     
+    @Published var ingredients: [Ingredient] = []
+    @Published var savedRecipes: [Recipe] = []
+    @Published var notifications: [NotificationEntry] = []
+    @Published var isLoadingIngredients = false
+    @Published var isLoadingRecipes = false
+    @Published var isLoadingNotifications = false
+    
     // MARK: - Ingredient Operations
     func fetchIngredients(for userId: String) async throws -> [Ingredient] {
         let snapshot = try await db.collection(Constants.Firebase.ingredients)
@@ -106,5 +113,108 @@ class FirestoreService: ObservableObject {
                 "read": true,
                 "readAt": Timestamp()
             ])
+    }
+    
+    func loadIngredients(for userId: String) async {
+        DispatchQueue.main.async {
+            self.isLoadingIngredients = true
+        }
+        
+        do {
+            let fetchedIngredients = try await fetchIngredients(for: userId)
+            DispatchQueue.main.async {
+                self.ingredients = fetchedIngredients
+                self.isLoadingIngredients = false
+            }
+        } catch {
+            print("Error loading ingredients: \(error)")
+            DispatchQueue.main.async {
+                self.isLoadingIngredients = false
+            }
+        }
+    }
+
+    func loadSavedRecipes(for userId: String) async {
+        DispatchQueue.main.async {
+            self.isLoadingRecipes = true
+        }
+        
+        do {
+            let fetchedRecipes = try await fetchSavedRecipes(for: userId)
+            DispatchQueue.main.async {
+                self.savedRecipes = fetchedRecipes
+                self.isLoadingRecipes = false
+            }
+        } catch {
+            print("Error loading recipes: \(error)")
+            DispatchQueue.main.async {
+                self.isLoadingRecipes = false
+            }
+        }
+    }
+
+    func loadNotifications(for userId: String) async {
+        DispatchQueue.main.async {
+            self.isLoadingNotifications = true
+        }
+        
+        do {
+            let fetchedNotifications = try await fetchNotifications(for: userId)
+            DispatchQueue.main.async {
+                self.notifications = fetchedNotifications
+                self.isLoadingNotifications = false
+            }
+        } catch {
+            print("Error loading notifications: \(error)")
+            DispatchQueue.main.async {
+                self.isLoadingNotifications = false
+            }
+        }
+    }
+
+    // Enhanced add ingredient that updates the local array
+    func addIngredientAndRefresh(_ ingredient: Ingredient) async throws {
+        try await addIngredient(ingredient)
+        await loadIngredients(for: ingredient.userId)
+    }
+
+    // Add trash functionality
+    func moveToTrash(ingredientId: String, userId: String) async throws {
+        try await db.collection(Constants.Firebase.ingredients)
+            .document(ingredientId)
+            .updateData([
+                "inTrash": true,
+                "trashedAt": Timestamp(date: Date()),
+                "updatedAt": Timestamp(date: Date())
+            ])
+        
+        // Refresh the ingredients list
+        await loadIngredients(for: userId)
+    }
+
+    // Add restore from trash functionality
+    func restoreFromTrash(ingredientId: String, userId: String) async throws {
+        try await db.collection(Constants.Firebase.ingredients)
+            .document(ingredientId)
+            .updateData([
+                "inTrash": false,
+                "trashedAt": FieldValue.delete(),
+                "updatedAt": Timestamp(date: Date())
+            ])
+        
+        await loadIngredients(for: userId)
+    }
+
+    // Add method to get trashed ingredients
+    func fetchTrashedIngredients(for userId: String) async throws -> [Ingredient] {
+        let snapshot = try await db.collection(Constants.Firebase.ingredients)
+            .whereField("userId", isEqualTo: userId)
+            .whereField("inTrash", isEqualTo: true)
+            .order(by: "trashedAt", descending: true)
+            .getDocuments()
+        
+        return try snapshot.documents.compactMap { document in
+            try document.data(as: Ingredient.self)
+        }
     }
 }
