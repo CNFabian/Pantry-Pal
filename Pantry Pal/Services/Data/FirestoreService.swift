@@ -72,6 +72,15 @@ class FirestoreService: ObservableObject {
         try docRef.setData(from: recipeToSave)
     }
     
+    func removeSavedRecipe(recipeId: String, userId: String) async throws {
+        try await db.collection(Constants.Firebase.savedRecipes)
+            .document(recipeId)
+            .delete()
+        
+        // Refresh the saved recipes list
+        await loadSavedRecipes(for: userId)
+    }
+    
     // MARK: - History Operations
     func addHistoryEntry(_ entry: HistoryEntry) async throws {
         let docRef = db.collection(Constants.Firebase.history).document()

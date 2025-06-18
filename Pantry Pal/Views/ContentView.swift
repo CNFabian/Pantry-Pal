@@ -121,34 +121,6 @@ struct MainTabView: View {
     }
 }
 
-// Add these temporary placeholder views at the end of ContentView.swift
-struct IngredientsListView: View {
-    var body: some View {
-        NavigationView {
-            Text("Ingredients List - Coming Soon")
-                .navigationTitle("My Pantry")
-        }
-    }
-}
-
-struct AddIngredientView: View {
-    var body: some View {
-        NavigationView {
-            Text("Add Ingredient - Coming Soon")
-                .navigationTitle("Add Ingredient")
-        }
-    }
-}
-
-struct RecipesView: View {
-    var body: some View {
-        NavigationView {
-            Text("Recipes - Coming Soon")
-                .navigationTitle("Recipes")
-        }
-    }
-}
-
 struct NotificationsView: View {
     var body: some View {
         NavigationView {
