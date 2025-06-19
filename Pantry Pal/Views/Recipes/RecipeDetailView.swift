@@ -12,10 +12,8 @@ struct RecipeDetailView: View {
     @Environment(\.dismiss) private var dismiss
     
     private var missingIngredients: [RecipeIngredient] {
-        let userIngredients = firestoreService.ingredients
-        
         return recipe.ingredients.filter { recipeIngredient in
-            !userIngredients.contains { userIngredient in
+            !firestoreService.ingredients.contains { userIngredient in
                 userIngredient.name.localizedCaseInsensitiveContains(recipeIngredient.name) &&
                 userIngredient.quantity >= recipeIngredient.quantity &&
                 !userIngredient.inTrash
@@ -382,8 +380,59 @@ struct InstructionStepRow: View {
 }
 
 #Preview {
-    let sampleRecipe = Recipe(
-        id: "1",
+    // Create sample recipe ingredients
+    let sampleIngredients = [
+        RecipeIngredient(
+            name: "Chicken Breast",
+            quantity: 1,
+            unit: "lb",
+            preparation: "diced"
+        ),
+        RecipeIngredient(
+            name: "Carrots",
+            quantity: 2,
+            unit: "pieces",
+            preparation: "sliced"
+        ),
+        RecipeIngredient(
+            name: "Soy Sauce",
+            quantity: 2,
+            unit: "tbsp",
+            preparation: nil
+        )
+    ]
+    
+    // Create sample recipe instructions
+    let sampleInstructions = [
+        RecipeInstruction(
+            stepNumber: 1,
+            instruction: "Cut chicken into bite-sized pieces",
+            duration: 5,
+            tip: "Keep pieces uniform for even cooking",
+            ingredients: ["Chicken Breast"],
+            equipment: ["Knife", "Cutting Board"]
+        ),
+        RecipeInstruction(
+            stepNumber: 2,
+            instruction: "Heat oil in a large pan over medium-high heat",
+            duration: 2,
+            tip: nil,
+            ingredients: [],
+            equipment: ["Large Pan"]
+        ),
+        RecipeInstruction(
+            stepNumber: 3,
+            instruction: "Add chicken and cook until golden brown",
+            duration: 8,
+            tip: "Don't overcrowd the pan",
+            ingredients: ["Chicken Breast"],
+            equipment: ["Large Pan"]
+        )
+    ]
+    
+    // Create sample recipe using manual property assignment
+    var sampleRecipe = Recipe(
+        id: nil, // @DocumentID must be optional
         name: "Chicken Stir Fry",
         description: "A quick and delicious chicken stir fry with vegetables",
         prepTime: "10 min",
@@ -392,52 +441,8 @@ struct InstructionStepRow: View {
         servings: 4,
         difficulty: "Easy",
         tags: ["Quick", "Healthy"],
-        ingredients: [
-            RecipeIngredient(
-                name: "Chicken Breast",
-                quantity: 1,
-                unit: "lb",
-                preparation: "diced"
-            ),
-            RecipeIngredient(
-                name: "Carrots",
-                quantity: 2,
-                unit: "pieces",
-                preparation: "sliced"
-            ),
-            RecipeIngredient(
-                name: "Soy Sauce",
-                quantity: 2,
-                unit: "tbsp",
-                preparation: nil
-            )
-        ],
-        instructions: [
-            RecipeInstruction(
-                stepNumber: 1,
-                instruction: "Cut chicken into bite-sized pieces",
-                duration: 5,
-                tip: "Keep pieces uniform for even cooking",
-                ingredients: ["Chicken Breast"],
-                equipment: ["Knife", "Cutting Board"]
-            ),
-            RecipeInstruction(
-                stepNumber: 2,
-                instruction: "Heat oil in a large pan over medium-high heat",
-                duration: 2,
-                tip: nil,
-                ingredients: [],
-                equipment: ["Large Pan"]
-            ),
-            RecipeInstruction(
-                stepNumber: 3,
-                instruction: "Add chicken and cook until golden brown",
-                duration: 8,
-                tip: "Don't overcrowd the pan",
-                ingredients: ["Chicken Breast"],
-                equipment: ["Large Pan"]
-            )
-        ],
+        ingredients: sampleIngredients,
+        instructions: sampleInstructions,
         adjustedFor: nil,
         isScaled: false,
         scaledFrom: nil,

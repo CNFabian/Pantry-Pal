@@ -284,45 +284,45 @@ struct AddIngredientView: View {
     }
     
     // MARK: - Actions
-    private func addIngredient() {
-        guard let userId = authService.user?.id,
-              isFormValid else { return }
-        
-        isLoading = true
-        hideKeyboard()
-        
-        let ingredient = Ingredient(
-            id: nil,
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            quantity: Double(quantity) ?? 0,
-            unit: selectedUnit,
-            category: selectedCategory,
-            expirationDate: hasExpirationDate ? Timestamp(date: expirationDate) : nil,
-            inTrash: false,
-            trashedAt: nil,
-            createdAt: Timestamp(date: Date()),
-            updatedAt: Timestamp(date: Date()),
-            userId: userId
-        )
-        
-        Task {
-            do {
-                try await firestoreService.addIngredientAndRefresh(ingredient)
-                
-                await MainActor.run {
-                    isLoading = false
-                    showingSuccessAlert = true
+        private func addIngredient() {
+            guard let userId = authService.user?.id,
+                  isFormValid else { return }
+            
+            isLoading = true
+            hideKeyboard()
+            
+            let ingredient = Ingredient(
+                id: nil,
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                quantity: Double(quantity) ?? 0,
+                unit: selectedUnit,
+                category: selectedCategory,
+                expirationDate: hasExpirationDate ? Timestamp(date: expirationDate) : nil,
+                inTrash: false,
+                trashedAt: nil,
+                createdAt: Timestamp(date: Date()),
+                updatedAt: Timestamp(date: Date()),
+                userId: userId
+            )
+            
+            Task {
+                do {
+                    try await firestoreService.addIngredientAndRefresh(ingredient)
+                    
+                    await MainActor.run {
+                        isLoading = false
+                        showingSuccessAlert = true
+                    }
+                } catch {
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = "Failed to add ingredient. Please try again."
+                        showingErrorAlert = true
+                    }
+                    print("Error adding ingredient: \(error)")
                 }
-            } catch {
-                await MainActor.run {
-                    isLoading = false
-                    errorMessage = "Failed to add ingredient. Please try again."
-                    showingErrorAlert = true
-                }
-                print("Error adding ingredient: \(error)")
             }
         }
-    }
     
     private func clearForm() {
         name = ""
