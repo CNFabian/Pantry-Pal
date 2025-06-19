@@ -293,17 +293,16 @@ struct AddIngredientView: View {
         
         let ingredient = Ingredient(
             id: nil,
-            userId: userId,
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             quantity: Double(quantity) ?? 0,
             unit: selectedUnit,
             category: selectedCategory,
             expirationDate: hasExpirationDate ? Timestamp(date: expirationDate) : nil,
-            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines),
             inTrash: false,
             trashedAt: nil,
             createdAt: Timestamp(date: Date()),
-            updatedAt: Timestamp(date: Date())
+            updatedAt: Timestamp(date: Date()),
+            userId: userId
         )
         
         Task {
@@ -340,19 +339,6 @@ struct AddIngredientView: View {
         isNameFieldFocused = false
         isQuantityFieldFocused = false
         isNotesFieldFocused = false
-    }
-}
-
-// MARK: - Custom Text Field Style
-struct CustomTextFieldStyle: TextFieldStyle {
-    func _body(configuration: TextField<Self._Label>) -> some View {
-        configuration
-            .padding(.horizontal, Constants.Design.standardPadding)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
-                    .fill(Color(.systemGray6))
-            )
     }
 }
 

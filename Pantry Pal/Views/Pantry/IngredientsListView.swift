@@ -179,8 +179,7 @@ struct IngredientsListView: View {
             // Expired Section
             if !expiredIngredients.isEmpty {
                 Section {
-                    ForEach(0..<expiredIngredients.count, id: \.self) { index in
-                        let ingredient = expiredIngredients[index]
+                    ForEach(expiredIngredients) { ingredient in
                         IngredientRow(ingredient: ingredient, status: .expired)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button("Trash") {
@@ -194,7 +193,8 @@ struct IngredientsListView: View {
                     SectionHeader(
                         title: "Expired",
                         count: expiredIngredients.count,
-                        color: .red
+                        color: .red,
+                        icon: "exclamationmark.triangle.fill"
                     )
                 }
             }
@@ -216,7 +216,8 @@ struct IngredientsListView: View {
                     SectionHeader(
                         title: "Expiring Soon",
                         count: expiringSoonIngredients.count,
-                        color: .orange
+                        color: .orange,
+                        icon: "clock.fill"
                     )
                 }
             }
@@ -238,7 +239,8 @@ struct IngredientsListView: View {
                     SectionHeader(
                         title: "Fresh",
                         count: freshIngredients.count,
-                        color: .green
+                        color: .green,
+                        icon: "checkmark.circle.fill"
                     )
                 }
             }
