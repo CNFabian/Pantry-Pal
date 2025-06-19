@@ -222,11 +222,11 @@ struct RecipeDetailView: View {
     }
     
     private func hasIngredient(_ recipeIngredient: RecipeIngredient) -> Bool {
-        firestoreService.ingredients.contains { userIngredient in
+        firestoreService.ingredients.first { userIngredient in
             userIngredient.name.localizedCaseInsensitiveContains(recipeIngredient.name) &&
             userIngredient.quantity >= recipeIngredient.quantity &&
             !userIngredient.inTrash
-        }
+        } != nil
     }
 }
 
