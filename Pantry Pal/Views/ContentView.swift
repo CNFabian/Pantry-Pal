@@ -92,11 +92,11 @@ struct MainTabView: View {
                     Text("Generate")
                 }
             
-            RecipesView()
-                .tabItem {
-                    Image(systemName: "book.fill")
-                    Text("Recipes")
-                }
+            SavedRecipesView()
+                    .tabItem {
+                        Image(systemName: "book.fill")
+                        Text("Recipes")
+                    }
             
             NotificationsView()
                 .tabItem {

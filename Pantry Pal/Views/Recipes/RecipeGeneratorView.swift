@@ -19,7 +19,7 @@ struct RecipeGeneratorView: View {
     @State private var generatedRecipe: Recipe?
     @State private var errorMessage = ""
     @State private var showingError = false
-    
+
     private let mealTypes = ["breakfast", "lunch", "dinner", "snack", "dessert"]
     
     var availableIngredients: [Ingredient] {

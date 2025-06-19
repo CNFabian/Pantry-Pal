@@ -10,6 +10,10 @@ struct RecipeDetailView: View {
     let recipe: Recipe
     @EnvironmentObject var firestoreService: FirestoreService
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var recipeService = RecipeService()
+    @State private var showingSaveConfirmation = false
+    @State private var saveError: String?
+    @State private var currentRecipe: Recipe?
     
     private var missingIngredients: [RecipeIngredient] {
         return recipe.ingredients.filter { recipeIngredient in
@@ -171,6 +175,35 @@ struct RecipeDetailView: View {
             VStack(spacing: 12) {
                 ForEach(recipe.instructions, id: \.id) { instruction in
                     InstructionStepRow(instruction: instruction)
+                }
+            }
+            
+            Button("Save Recipe") {
+                Task {
+                    do {
+                        // Use 'recipe' if it's a parameter, or 'currentRecipe' if it's a state variable
+                        if let recipeToSave = currentRecipe { // or just 'recipe' if it's a parameter
+                            try await recipeService.saveRecipe(recipeToSave)
+                            showingSaveConfirmation = true
+                        }
+                    } catch {
+                        saveError = error.localizedDescription
+                    }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(currentRecipe == nil)
+            
+            .alert("Recipe Saved!", isPresented: $showingSaveConfirmation) {
+                Button("OK") { }
+            } message: {
+                Text("Recipe has been saved to your collection!")
+            }
+            .alert("Save Error", isPresented: .constant(saveError != nil)) {
+                Button("OK") { saveError = nil }
+            } message: {
+                if let error = saveError {
+                    Text(error)
                 }
             }
 
