@@ -86,6 +86,12 @@ struct MainTabView: View {
                     Text("Add")
                 }
             
+            RecipeGeneratorView()
+                .tabItem {
+                    Image(systemName: "wand.and.stars")
+                    Text("Generate")
+                }
+            
             RecipesView()
                 .tabItem {
                     Image(systemName: "book.fill")

@@ -88,6 +88,24 @@ class FirestoreService: ObservableObject {
             .delete()
     }
     
+    // Add this method to your existing FirestoreService class, around line 94 where the error is occurring
+    func saveGeneratedRecipe(_ recipe: Recipe, for userId: String) async throws {
+        let docRef = db.collection(Constants.Firebase.savedRecipes).document()
+        
+        // Create a new recipe with the proper userId and timestamps
+        var recipeToSave = recipe
+        recipeToSave.userId = userId
+        recipeToSave.savedAt = Timestamp()
+        recipeToSave.id = docRef.documentID
+        
+        try docRef.setData(from: recipeToSave)
+        
+        // Update local array
+        await MainActor.run {
+            self.savedRecipes.append(recipeToSave)
+        }
+    }
+    
     // MARK: - Recipe Operations
     func fetchSavedRecipes(for userId: String) async throws -> [Recipe] {
         let snapshot = try await db.collection(Constants.Firebase.savedRecipes)

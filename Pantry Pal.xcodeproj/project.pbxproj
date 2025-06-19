@@ -13,6 +13,7 @@
 		12EEF9512E035C06003D466E /* FirebaseInAppMessaging-Beta in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF9502E035C06003D466E /* FirebaseInAppMessaging-Beta */; };
 		12EEF9532E035C06003D466E /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF9522E035C06003D466E /* FirebaseMessaging */; };
 		12EEF9552E035C06003D466E /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF9542E035C06003D466E /* FirebaseStorage */; };
+		12EEF9912E03DC22003D466E /* GoogleGenerativeAI in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF9902E03DC22003D466E /* GoogleGenerativeAI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +87,7 @@
 				12EEF94D2E035C05003D466E /* FirebaseAuth in Frameworks */,
 				12EEF9532E035C06003D466E /* FirebaseMessaging in Frameworks */,
 				12EEF94F2E035C06003D466E /* FirebaseFirestore in Frameworks */,
+				12EEF9912E03DC22003D466E /* GoogleGenerativeAI in Frameworks */,
 				12EEF9512E035C06003D466E /* FirebaseInAppMessaging-Beta in Frameworks */,
 				12EEF9552E035C06003D466E /* FirebaseStorage in Frameworks */,
 			);
@@ -154,6 +156,7 @@
 				12EEF9502E035C06003D466E /* FirebaseInAppMessaging-Beta */,
 				12EEF9522E035C06003D466E /* FirebaseMessaging */,
 				12EEF9542E035C06003D466E /* FirebaseStorage */,
+				12EEF9902E03DC22003D466E /* GoogleGenerativeAI */,
 			);
 			productName = "Pantry Pal";
 			productReference = 126BBA6D2E034ADD006EEF32 /* Pantry Pal.app */;
@@ -239,6 +242,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				12EEF98F2E03DC22003D466E /* XCRemoteSwiftPackageReference "generative-ai-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 126BBA6E2E034ADD006EEF32 /* Products */;
@@ -605,6 +609,14 @@
 				minimumVersion = 11.14.0;
 			};
 		};
+		12EEF98F2E03DC22003D466E /* XCRemoteSwiftPackageReference "generative-ai-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/generative-ai-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.6;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -637,6 +649,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseStorage;
+		};
+		12EEF9902E03DC22003D466E /* GoogleGenerativeAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12EEF98F2E03DC22003D466E /* XCRemoteSwiftPackageReference "generative-ai-swift" */;
+			productName = GoogleGenerativeAI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
