@@ -28,13 +28,19 @@ class AuthenticationService: ObservableObject {
     
     func listenToAuthState() {
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
+            print("🐛 DEBUG: Auth state changed")
+            print("🐛 DEBUG: Firebase user: \(String(describing: user))")
+            print("🐛 DEBUG: User UID: \(user?.uid ?? "nil")")
+            
             DispatchQueue.main.async {
                 self?.isAuthenticated = user != nil
                 if let user = user {
+                    print("🐛 DEBUG: User authenticated, fetching user data")
                     Task {
                         await self?.fetchUserData(uid: user.uid)
                     }
                 } else {
+                    print("🐛 DEBUG: No user, setting to nil")
                     self?.user = nil
                 }
             }
@@ -141,21 +147,99 @@ class AuthenticationService: ObservableObject {
         }
     }
     
+    private func createUserDocumentFromFirebaseAuth(uid: String) async {
+        guard let firebaseUser = Auth.auth().currentUser else {
+            print("🐛 DEBUG: No Firebase user available")
+            DispatchQueue.main.async {
+                self.errorMessage = "Authentication error"
+                self.isLoading = false
+            }
+            return
+        }
+        
+        print("🐛 DEBUG: Creating user document for UID: \(uid)")
+        
+        let userData = User(
+            id: uid,
+            email: firebaseUser.email ?? "",
+            displayName: firebaseUser.displayName ?? "User",
+            photoURL: firebaseUser.photoURL?.absoluteString,
+            createdAt: Timestamp(),
+            updatedAt: Timestamp()
+        )
+        
+        do {
+            try await Firestore.firestore()
+                .collection(Constants.Firebase.users)
+                .document(uid)
+                .setData(from: userData)
+            
+            print("🐛 DEBUG: Created user document successfully")
+            
+            DispatchQueue.main.async {
+                self.user = userData
+                self.isLoading = false
+            }
+        } catch {
+            print("🐛 DEBUG: Failed to create user document: \(error)")
+            DispatchQueue.main.async {
+                self.errorMessage = "Failed to create user profile"
+                self.isLoading = false
+            }
+        }
+    }
+    
+    func ensureUserReady() async -> Bool {
+        print("🐛 DEBUG: Ensuring user is ready")
+        
+        guard let firebaseUser = Auth.auth().currentUser else {
+            print("🐛 DEBUG: No Firebase user in ensureUserReady")
+            return false
+        }
+        
+        print("🐛 DEBUG: Firebase user exists: \(firebaseUser.uid)")
+        
+        // If we already have user data, return true
+        if let user = self.user {
+            print("🐛 DEBUG: User data already exists: \(user.id ?? "no-id")")
+            return true
+        }
+        
+        // Try to fetch user data
+        print("🐛 DEBUG: Fetching user data...")
+        await fetchUserData(uid: firebaseUser.uid)
+        
+        // Check if we now have user data
+        let hasUser = self.user != nil
+        print("🐛 DEBUG: User ready status: \(hasUser)")
+        return hasUser
+    }
+    
     private func fetchUserData(uid: String) async {
+        print("🐛 DEBUG: Fetching user data for UID: \(uid)")
         do {
             let document = try await Firestore.firestore()
                 .collection(Constants.Firebase.users)
                 .document(uid)
                 .getDocument()
             
+            print("🐛 DEBUG: User document exists: \(document.exists)")
+            
             if let userData = try? document.data(as: User.self) {
+                print("🐛 DEBUG: Successfully decoded user data: \(userData)")
                 DispatchQueue.main.async {
                     self.user = userData
                     self.isLoading = false
                 }
+            } else {
+                print("🐛 DEBUG: Failed to decode user data, creating new user document")
+                // If user document doesn't exist, create it
+                await createUserDocumentFromFirebaseAuth(uid: uid)
             }
         } catch {
+            print("🐛 DEBUG: Error fetching user data: \(error)")
             DispatchQueue.main.async {
+                self.errorMessage = "Failed to load user data"
                 self.isLoading = false
             }
         }

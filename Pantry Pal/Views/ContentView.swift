@@ -107,6 +107,12 @@ struct MainTabView: View {
         .accentColor(.primaryOrange)
         .onAppear {
             loadInitialData()
+            print("🐛 DEBUG: MainTabView appeared")
+                if let userId = authService.user?.id {
+                    Task {
+                        await firestoreService.loadIngredients(for: userId)
+                    }
+                }
         }
     }
     

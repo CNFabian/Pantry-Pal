@@ -5,6 +5,7 @@
 
 import SwiftUI
 import Firebase
+import FirebaseFirestore
 
 struct AddIngredientView: View {
     @EnvironmentObject var authService: AuthenticationService
@@ -96,6 +97,11 @@ struct AddIngredientView: View {
             }
             .alert("Error", isPresented: $showingErrorAlert) {
                 Button("OK") { }
+                if errorMessage.contains("not authenticated") {
+                        Button("Sign Out & Retry") {
+                            authService.signOut()
+                        }
+                    }
             } message: {
                 Text(errorMessage)
             }
@@ -284,12 +290,33 @@ struct AddIngredientView: View {
     }
     
     // MARK: - Actions
-        private func addIngredient() {
-            guard let userId = authService.user?.id,
-                  isFormValid else { return }
+    private func addIngredient() {
+        print("🐛 DEBUG: addIngredient called")
+        
+        guard isFormValid else {
+            print("🐛 DEBUG: Form is not valid")
+            return
+        }
+        
+        isLoading = true
+        hideKeyboard()
+        
+        Task {
+            // First ensure the user is properly authenticated and ready
+            let userReady = await authService.ensureUserReady()
             
-            isLoading = true
-            hideKeyboard()
+            guard userReady, let userId = authService.user?.id else {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "User not authenticated. Please sign out and sign in again."
+                    showingErrorAlert = true
+                    print("🐛 DEBUG: User not ready for ingredient addition")
+                }
+                return
+            }
+            
+            print("🐛 DEBUG: User ready, proceeding with ingredient addition")
+            print("🐛 DEBUG: User ID: \(userId)")
             
             let ingredient = Ingredient(
                 id: nil,
@@ -305,24 +332,27 @@ struct AddIngredientView: View {
                 userId: userId
             )
             
-            Task {
-                do {
-                    try await firestoreService.addIngredientAndRefresh(ingredient)
-                    
-                    await MainActor.run {
-                        isLoading = false
-                        showingSuccessAlert = true
-                    }
-                } catch {
-                    await MainActor.run {
-                        isLoading = false
-                        errorMessage = "Failed to add ingredient. Please try again."
-                        showingErrorAlert = true
-                    }
-                    print("Error adding ingredient: \(error)")
+            print("🐛 DEBUG: Created ingredient object: \(ingredient)")
+            
+            do {
+                try await firestoreService.debugAddIngredient(ingredient)
+                try await firestoreService.loadIngredients(for: userId)
+                
+                await MainActor.run {
+                    isLoading = false
+                    showingSuccessAlert = true
+                    print("🐛 DEBUG: Successfully added ingredient")
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Failed to add ingredient: \(error.localizedDescription)"
+                    showingErrorAlert = true
+                    print("🐛 DEBUG: Error in addIngredient: \(error)")
                 }
             }
         }
+    }
     
     private func clearForm() {
         name = ""

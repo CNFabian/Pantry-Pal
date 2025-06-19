@@ -20,15 +20,24 @@ class FirestoreService: ObservableObject {
     
     // MARK: - Ingredient Operations
     func fetchIngredients(for userId: String) async throws -> [Ingredient] {
+        print("🐛 DEBUG: fetchIngredients called for user: \(userId)")
+        
         let snapshot = try await db.collection(Constants.Firebase.ingredients)
             .whereField("userId", isEqualTo: userId)
             .whereField("inTrash", isEqualTo: false)
             .order(by: "name")
             .getDocuments()
         
-        return try snapshot.documents.compactMap { document in
-            try document.data(as: Ingredient.self)
+        print("🐛 DEBUG: Firestore query returned \(snapshot.documents.count) documents")
+        
+        let ingredients = try snapshot.documents.compactMap { document in
+            print("🐛 DEBUG: Processing document: \(document.documentID)")
+            print("🐛 DEBUG: Document data: \(document.data())")
+            return try document.data(as: Ingredient.self)
         }
+        
+        print("🐛 DEBUG: Successfully parsed \(ingredients.count) ingredients")
+        return ingredients
     }
     
     func addIngredient(_ ingredient: Ingredient) async throws {
@@ -37,6 +46,33 @@ class FirestoreService: ObservableObject {
         ingredientToSave.id = docRef.documentID
         
         try docRef.setData(from: ingredientToSave)
+    }
+    
+    // Add this method to FirestoreService class
+    func debugAddIngredient(_ ingredient: Ingredient) async throws {
+        print("🐛 DEBUG: Starting addIngredient")
+        print("🐛 DEBUG: Ingredient data: \(ingredient)")
+        print("🐛 DEBUG: User ID: \(ingredient.userId)")
+        
+        // Check if Firestore is configured
+        print("🐛 DEBUG: Firestore instance: \(db)")
+        
+        let docRef = db.collection(Constants.Firebase.ingredients).document()
+        print("🐛 DEBUG: Document reference created: \(docRef.documentID)")
+        
+        var ingredientToSave = ingredient
+        ingredientToSave.id = docRef.documentID
+        
+        print("🐛 DEBUG: About to save ingredient with ID: \(docRef.documentID)")
+        
+        do {
+            try docRef.setData(from: ingredientToSave)
+            print("🐛 DEBUG: Successfully saved ingredient")
+        } catch {
+            print("🐛 DEBUG: Failed to save ingredient: \(error)")
+            print("🐛 DEBUG: Error details: \(error.localizedDescription)")
+            throw error
+        }
     }
     
     func updateIngredient(_ ingredient: Ingredient) async throws {
@@ -125,18 +161,23 @@ class FirestoreService: ObservableObject {
     }
     
     func loadIngredients(for userId: String) async {
+        print("🐛 DEBUG: FirestoreService.loadIngredients called for user: \(userId)")
+        
         DispatchQueue.main.async {
             self.isLoadingIngredients = true
         }
         
         do {
             let fetchedIngredients = try await fetchIngredients(for: userId)
+            print("🐛 DEBUG: Fetched \(fetchedIngredients.count) ingredients from Firestore")
+            
             DispatchQueue.main.async {
                 self.ingredients = fetchedIngredients
                 self.isLoadingIngredients = false
+                print("🐛 DEBUG: Updated ingredients array. New count: \(self.ingredients.count)")
             }
         } catch {
-            print("Error loading ingredients: \(error)")
+            print("🐛 DEBUG: Error loading ingredients: \(error)")
             DispatchQueue.main.async {
                 self.isLoadingIngredients = false
             }

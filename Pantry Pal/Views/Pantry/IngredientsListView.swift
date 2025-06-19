@@ -16,6 +16,19 @@ struct IngredientsListView: View {
     @State private var showingTrashAlert = false
     @State private var ingredientToDelete: Ingredient?
     
+    private var debugInfo: String {
+        let ingredientCount = firestoreService.ingredients.count
+        let userId = authService.user?.id ?? "no-user-id"
+        let isLoading = firestoreService.isLoadingIngredients
+        
+        return """
+        Ingredients count: \(ingredientCount)
+        User ID: \(userId)
+        Is loading: \(isLoading)
+        Is authenticated: \(authService.isAuthenticated)
+        """
+    }
+    
     private var categories = ["All"] + Constants.ingredientCategories
     
     private var filteredIngredients: [Ingredient] {
@@ -91,6 +104,20 @@ struct IngredientsListView: View {
             } message: {
                 if let ingredient = ingredientToDelete {
                     Text("Are you sure you want to move \(ingredient.name) to trash?")
+                }
+            }
+        }
+        .onAppear {
+            print("🐛 DEBUG: IngredientsListView appeared")
+            Task {
+                await refreshIngredients()
+            }
+        }
+        .onReceive(authService.$user) { user in
+            print("🐛 DEBUG: User changed in IngredientsListView: \(String(describing: user?.id))")
+            if let userId = user?.id {
+                Task {
+                    await firestoreService.loadIngredients(for: userId)
                 }
             }
         }
@@ -251,8 +278,18 @@ struct IngredientsListView: View {
     
     // MARK: - Actions
     private func refreshIngredients() async {
-        guard let userId = authService.user?.id else { return }
+        print("🐛 DEBUG: refreshIngredients called")
+        guard let userId = authService.user?.id else {
+            print("🐛 DEBUG: No user ID available for refreshing ingredients")
+            return
+        }
+        
+        print("🐛 DEBUG: Loading ingredients for user: \(userId)")
         await firestoreService.loadIngredients(for: userId)
+        
+        await MainActor.run {
+            print("🐛 DEBUG: Ingredients loaded. Count: \(firestoreService.ingredients.count)")
+        }
     }
     
     private func moveToTrash(_ ingredient: Ingredient) {
