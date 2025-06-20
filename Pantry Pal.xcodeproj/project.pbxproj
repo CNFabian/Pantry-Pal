@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		12DF5DEE2E0613E600527FCF /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 12DF5DED2E0613E600527FCF /* FirebaseFunctions */; };
+		12DF5DF02E0613E600527FCF /* FirebaseFunctionsCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 12DF5DEF2E0613E600527FCF /* FirebaseFunctionsCombine-Community */; };
 		12EEF94B2E035C05003D466E /* FirebaseAI in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF94A2E035C05003D466E /* FirebaseAI */; };
 		12EEF94D2E035C05003D466E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF94C2E035C05003D466E /* FirebaseAuth */; };
 		12EEF94F2E035C06003D466E /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 12EEF94E2E035C05003D466E /* FirebaseFirestore */; };
@@ -103,7 +105,9 @@
 			files = (
 				12EEF94B2E035C05003D466E /* FirebaseAI in Frameworks */,
 				12EEF94D2E035C05003D466E /* FirebaseAuth in Frameworks */,
+				12DF5DF02E0613E600527FCF /* FirebaseFunctionsCombine-Community in Frameworks */,
 				12EEF9532E035C06003D466E /* FirebaseMessaging in Frameworks */,
+				12DF5DEE2E0613E600527FCF /* FirebaseFunctions in Frameworks */,
 				12EEF94F2E035C06003D466E /* FirebaseFirestore in Frameworks */,
 				12EEF9912E03DC22003D466E /* GoogleGenerativeAI in Frameworks */,
 				12EEF9512E035C06003D466E /* FirebaseInAppMessaging-Beta in Frameworks */,
@@ -175,6 +179,8 @@
 				12EEF9522E035C06003D466E /* FirebaseMessaging */,
 				12EEF9542E035C06003D466E /* FirebaseStorage */,
 				12EEF9902E03DC22003D466E /* GoogleGenerativeAI */,
+				12DF5DED2E0613E600527FCF /* FirebaseFunctions */,
+				12DF5DEF2E0613E600527FCF /* FirebaseFunctionsCombine-Community */,
 			);
 			productName = "Pantry Pal";
 			productReference = 126BBA6D2E034ADD006EEF32 /* Pantry Pal.app */;
@@ -642,6 +648,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		12DF5DED2E0613E600527FCF /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
+		};
+		12DF5DEF2E0613E600527FCF /* FirebaseFunctionsCombine-Community */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = "FirebaseFunctionsCombine-Community";
+		};
 		12EEF94A2E035C05003D466E /* FirebaseAI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
