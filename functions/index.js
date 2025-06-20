@@ -1,32 +1,100 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
+const functions = require('firebase-functions');
+const axios = require('axios');
 
-const {setGlobalOptions} = require("firebase-functions");
-const {onRequest} = require("firebase-functions/https");
-const logger = require("firebase-functions/logger");
+// Your FatSecret credentials
+const FATSECRET_CLIENT_ID = functions.config().fatsecret?.client_id;
+const FATSECRET_CLIENT_SECRET = functions.config().fatsecret?.client_secret;
 
-// For cost control, you can set the maximum number of containers that can be
-// running at the same time. This helps mitigate the impact of unexpected
-// traffic spikes by instead downgrading performance. This limit is a
-// per-function limit. You can override the limit for each function using the
-// `maxInstances` option in the function's options, e.g.
-// `onRequest({ maxInstances: 5 }, (req, res) => { ... })`.
-// NOTE: setGlobalOptions does not apply to functions using the v1 API. V1
-// functions should each use functions.runWith({ maxInstances: 10 }) instead.
-// In the v1 API, each function can only serve one request per container, so
-// this will be the maximum concurrent request count.
-setGlobalOptions({ maxInstances: 10 });
+// Helper function to get FatSecret access token
+async function getFatSecretToken() {
+  try {
+    if (!FATSECRET_CLIENT_ID || !FATSECRET_CLIENT_SECRET) {
+      throw new Error('FatSecret credentials not configured');
+    }
+    
+    const credentials = Buffer.from(`${FATSECRET_CLIENT_ID}:${FATSECRET_CLIENT_SECRET}`).toString('base64');
+    
+    const response = await axios.post('https://oauth.fatsecret.com/connect/token', 
+      'grant_type=client_credentials&scope=basic',
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${credentials}`
+        }
+      }
+    );
+    
+    return response.data.access_token;
+  } catch (error) {
+    console.error('Error getting FatSecret token:', error.response?.data || error.message);
+    throw new functions.https.HttpsError('internal', 'Failed to authenticate with FatSecret');
+  }
+}
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
-
-// exports.helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+// Main function to search food by barcode
+exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
+  // Verify user is authenticated
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+  
+  const {barcode} = data;
+  
+  if (!barcode) {
+    throw new functions.https.HttpsError('invalid-argument', 'Barcode is required');
+  }
+  
+  try {
+    console.log(`Searching for barcode: ${barcode}`);
+    
+    // Get access token
+    const accessToken = await getFatSecretToken();
+    console.log('Got FatSecret access token');
+    
+    // Search for food by barcode
+    const barcodeResponse = await axios.get('https://platform.fatsecret.com/rest/server.api', {
+      params: {
+        method: 'food.find_id_for_barcode',
+        barcode: barcode,
+        format: 'json'
+      },
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    console.log('Barcode search response:', barcodeResponse.data);
+    
+    // Check if food was found
+    if (barcodeResponse.data.error) {
+      console.log('FatSecret API error:', barcodeResponse.data.error);
+      return {error: barcodeResponse.data.error};
+    }
+    
+    if (!barcodeResponse.data.food_id?.value) {
+      return {error: {message: 'No food found for this barcode'}};
+    }
+    
+    const foodId = barcodeResponse.data.food_id.value;
+    console.log(`Found food ID: ${foodId}`);
+    
+    // Get detailed food information
+    const foodResponse = await axios.get('https://platform.fatsecret.com/rest/server.api', {
+      params: {
+        method: 'food.get.v2',
+        food_id: foodId,
+        format: 'json'
+      },
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    console.log('Food details retrieved successfully');
+    return {food: foodResponse.data.food};
+    
+  } catch (error) {
+    console.error('Error in searchFoodByBarcode:', error.response?.data || error.message);
+    throw new functions.https.HttpsError('internal', 'Failed to search for food');
+  }
+});
