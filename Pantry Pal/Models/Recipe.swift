@@ -229,31 +229,6 @@ extension Recipe {
             return .gray
         }
     }
-    
-    // Scale recipe for different serving sizes
-    func scaled(for targetServings: Int) -> Recipe {
-        guard targetServings > 0 && targetServings != servings else { return self }
-        
-        let scaleFactor = Double(targetServings) / Double(servings)
-        
-        let scaledIngredients = ingredients.map { ingredient in
-            RecipeIngredient(
-                name: ingredient.name,
-                quantity: ingredient.quantity * scaleFactor,
-                unit: ingredient.unit,
-                preparation: ingredient.preparation
-            )
-        }
-        
-        var scaledRecipe = self
-        scaledRecipe.ingredients = scaledIngredients
-        scaledRecipe.servings = targetServings
-        scaledRecipe.adjustedFor = targetServings
-        scaledRecipe.isScaled = true
-        scaledRecipe.scaledFrom = "\(servings) servings"
-        
-        return scaledRecipe
-    }
 }
 
 // MARK: - Response Models for AI Service

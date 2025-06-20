@@ -168,19 +168,19 @@ struct SavedRecipesView: View {
 
     }
 }
+
 struct SavedRecipeCard: View {
     let recipe: Recipe
-    let targetServings: Int
     let onTap: () -> Void
     @State private var selectedServingSize = 4
     @State private var showingServingSizeAdjustment = false
     
     private var scaledRecipe: Recipe {
-        recipe.scaleEffect(CGFloat(selectedServingSize) / CGFloat(recipe.originalServings))
+        recipe.scaled(for: selectedServingSize)
     }
     
     private var isScaled: Bool {
-        targetServings != recipe.servings
+        selectedServingSize != recipe.servings
     }
     
     var body: some View {
@@ -228,7 +228,7 @@ struct SavedRecipeCard: View {
             HStack {
                 Label(scaledRecipe.totalTime, systemImage: "clock")
                 Spacer()
-                Label("\(targetServings) servings", systemImage: "person.2")
+                Label("\(selectedServingSize) servings", systemImage: "person.2")
                     .foregroundColor(isScaled ? .primaryOrange : .primary)
                 Spacer()
                 Text(recipe.savedAt?.dateValue() ?? Date(), style: .date)
