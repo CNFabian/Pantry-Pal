@@ -49,9 +49,13 @@ class FatSecretService: ObservableObject {
     
     // MARK: - Food Search by Barcode
     func searchFoodByBarcode(_ barcode: String) async throws -> FatSecretFood? {
+        print("🔍 FatSecret: Searching for barcode: \(barcode)")
+        
         let token = try await getAccessToken()
+        print("🔑 FatSecret: Got access token successfully")
         
         guard var components = URLComponents(string: baseURL) else {
+            print("❌ FatSecret: Invalid base URL")
             throw FatSecretError.invalidURL
         }
         
@@ -62,23 +66,40 @@ class FatSecretService: ObservableObject {
         ]
         
         guard let url = components.url else {
+            print("❌ FatSecret: Failed to build URL")
             throw FatSecretError.invalidURL
         }
+        
+        print("🌐 FatSecret: Making request to: \(url)")
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        if let httpResponse = response as? HTTPURLResponse {
+            print("📡 FatSecret: HTTP Status: \(httpResponse.statusCode)")
+        }
+        
+        print("📦 FatSecret: Received data: \(data.count) bytes")
+        
+        // Print raw response for debugging
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("📄 FatSecret Response: \(responseString)")
+        }
         
         do {
             let response = try JSONDecoder().decode(BarcodeResponse.self, from: data)
             
             if let foodId = response.food_id?.value {
+                print("🆔 FatSecret: Found food ID: \(foodId)")
                 return try await getFoodDetails(foodId: foodId)
+            } else {
+                print("❌ FatSecret: No food_id in response")
+                return nil
             }
-            return nil
         } catch {
-            print("Error parsing barcode response: \(error)")
+            print("💥 FatSecret: JSON parsing error: \(error)")
             return nil
         }
     }

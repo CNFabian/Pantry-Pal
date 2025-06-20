@@ -59,12 +59,44 @@ struct IngredientsListView: View {
         filteredIngredients.filter { !$0.isExpired && !$0.isExpiringSoon }
     }
     
+    @State private var testBarcodes = [
+        "049000028434", // Coca-Cola
+        "016000275300", // Cheerios
+        "021000659340"  // Kraft Mac & Cheese
+    ]
+    @State private var currentTestIndex = 0
+
+    private var testButton: some View {
+        Button(action: {
+            Task {
+                let barcode = testBarcodes[currentTestIndex]
+                print("🧪 Testing with barcode: \(barcode)")
+                await searchFoodByBarcode(barcode)
+                currentTestIndex = (currentTestIndex + 1) % testBarcodes.count
+            }
+        }) {
+            HStack {
+                Image(systemName: "testtube.2")
+                Text("Test FatSecret API")
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
+                    .fill(Color.blue)
+            )
+        }
+        .padding(.horizontal, Constants.Design.standardPadding)
+    }
+    
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
                 // Search Bar
                 searchBar
-                
+                scannerButton
+                testButton
                 // Category Filter
                 if !categories.isEmpty {
                     categoryFilter
@@ -118,7 +150,7 @@ struct IngredientsListView: View {
                     selectedCategory: $selectedCategory
                 )
             }
-            scannerButton
+            
             .alert("Move to Trash", isPresented: $showingTrashAlert) {
                 Button("Cancel", role: .cancel) {
                     ingredientToDelete = nil
@@ -357,18 +389,26 @@ struct IngredientsListView: View {
     }
     
     private func searchFoodByBarcode(_ barcode: String) async {
+        print("🚀 Starting barcode search for: \(barcode)")
+        
         do {
             if let food = try await fatSecretService.searchFoodByBarcode(barcode) {
+                print("✅ Found food: \(food.food_name)")
+                print("🏷️ Brand: \(food.brand_name ?? "No brand")")
+                print("🍽️ Servings available: \(food.servings.serving.count)")
+                
                 await MainActor.run {
                     self.fatSecretFood = food
                     self.showingFatSecretSelection = true
                 }
             } else {
-                // Handle case where no food is found for the barcode
-                print("No food found for barcode: \(barcode)")
+                print("❌ No food found for barcode: \(barcode)")
             }
         } catch {
-            print("Error searching for food: \(error)")
+            print("💥 Error searching for food: \(error)")
+            if let data = error as? FatSecretError {
+                print("🔍 FatSecret Error type: \(data)")
+            }
         }
         
         // Reset the scanned barcode
