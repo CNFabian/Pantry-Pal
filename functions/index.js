@@ -33,7 +33,6 @@ async function getFatSecretToken() {
 
 // Main function to search food by barcode
 exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
-  // Verify user is authenticated
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
   }
@@ -47,11 +46,9 @@ exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
   try {
     console.log(`Searching for barcode: ${barcode}`);
     
-    // Get access token
     const accessToken = await getFatSecretToken();
     console.log('Got FatSecret access token');
     
-    // Search for food by barcode
     const barcodeResponse = await axios.get('https://platform.fatsecret.com/rest/server.api', {
       params: {
         method: 'food.find_id_for_barcode',
@@ -65,7 +62,6 @@ exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
     
     console.log('Barcode search response:', barcodeResponse.data);
     
-    // Check if food was found
     if (barcodeResponse.data.error) {
       console.log('FatSecret API error:', barcodeResponse.data.error);
       return {error: barcodeResponse.data.error};
@@ -78,7 +74,6 @@ exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
     const foodId = barcodeResponse.data.food_id.value;
     console.log(`Found food ID: ${foodId}`);
     
-    // Get detailed food information
     const foodResponse = await axios.get('https://platform.fatsecret.com/rest/server.api', {
       params: {
         method: 'food.get.v2',
