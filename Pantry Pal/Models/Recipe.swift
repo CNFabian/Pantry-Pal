@@ -25,7 +25,10 @@ struct Recipe: Identifiable, Codable {
     var savedAt: Timestamp?
     var userId: String?
     
-    // Additional properties for AI generation compatibility
+    var documentID: String {
+        return id ?? UUID().uuidString
+    }
+    
     var prepTimeMinutes: Int {
         return extractMinutesFromTimeString(prepTime)
     }

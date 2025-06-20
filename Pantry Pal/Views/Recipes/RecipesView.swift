@@ -77,7 +77,7 @@ struct RecipesView: View {
                 )
             }
             .sheet(item: $selectedRecipe) { recipe in
-                RecipeDetailView(recipe: recipe)
+                RecipeDetailView(recipe: recipe, isFromGenerator: false, onRecipeComplete: nil)
             }
             .alert("Remove Recipe", isPresented: $showingDeleteAlert) {
                 Button("Cancel", role: .cancel) {
@@ -173,63 +173,49 @@ struct RecipesView: View {
         .padding(.horizontal, Constants.Design.standardPadding)
     }
     
-    // MARK: - Recipes List
     private var recipesList: some View {
-        List {
-            // Can Make Section
-            if !canMakeRecipes.isEmpty {
-                Section {
-                    ForEach(canMakeRecipes) { recipe in
-                        RecipeRow(recipe: recipe, canMake: true)
-                            .onTapGesture {
+        ScrollView {
+            LazyVStack(spacing: Constants.Design.standardPadding) {
+                if !canMakeRecipes.isEmpty {
+                    VStack(alignment: .leading, spacing: Constants.Design.smallPadding) {
+                        Text("You can make these recipes!")
+                            .font(.headline)
+                            .foregroundColor(.textPrimary)
+                            .padding(.horizontal, Constants.Design.standardPadding)
+                        
+                        ForEach(canMakeRecipes, id: \.documentID) { recipe in
+                            Button(action: {
                                 selectedRecipe = recipe
+                            }) {
+                                RecipeRow(recipe: recipe, canMake: true)
                             }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button("Remove") {
-                                    recipeToDelete = recipe
-                                    showingDeleteAlert = true
-                                }
-                                .tint(.red)
-                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .padding(.horizontal, Constants.Design.standardPadding)
+                        }
                     }
-                } header: {
-                    SectionHeader(
-                        title: "You Can Make",
-                        count: canMakeRecipes.count,
-                        color: .green,
-                        icon: "checkmark.circle.fill"
-                    )
+                }
+                
+                if !cannotMakeRecipes.isEmpty {
+                    VStack(alignment: .leading, spacing: Constants.Design.smallPadding) {
+                        Text("Missing some ingredients")
+                            .font(.headline)
+                            .foregroundColor(.textSecondary)
+                            .padding(.horizontal, Constants.Design.standardPadding)
+                        
+                        ForEach(cannotMakeRecipes, id: \.documentID) { recipe in
+                            Button(action: {
+                                selectedRecipe = recipe
+                            }) {
+                                RecipeRow(recipe: recipe, canMake: false)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .padding(.horizontal, Constants.Design.standardPadding)
+                        }
+                    }
                 }
             }
-            
-            // Cannot Make Section
-            if !cannotMakeRecipes.isEmpty {
-                Section {
-                    ForEach(cannotMakeRecipes) { recipe in
-                        RecipeRow(recipe: recipe, canMake: false)
-                            .onTapGesture {
-                                selectedRecipe = recipe
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button("Remove") {
-                                    recipeToDelete = recipe
-                                    showingDeleteAlert = true
-                                }
-                                .tint(.red)
-                            }
-                    }
-                } header: {
-                    SectionHeader(
-                        title: "Missing Ingredients",
-                        count: cannotMakeRecipes.count,
-                        color: .orange,
-                        icon: "exclamationmark.circle.fill"
-                    )
-                }
-            }
+            .padding(.vertical, Constants.Design.standardPadding)
         }
-        .listStyle(.grouped)
-        .scrollContentBackground(.hidden)
     }
     
     // MARK: - Helper Functions

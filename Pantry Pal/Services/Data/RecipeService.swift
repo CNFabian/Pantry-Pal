@@ -15,15 +15,16 @@ class RecipeService: ObservableObject {
         
         var recipeToSave = recipe
         recipeToSave.userId = userId
-        recipeToSave.savedAt = Timestamp(date: Date()) // Convert Date to Timestamp
+        recipeToSave.savedAt = Timestamp(date: Date())
         
         do {
-            let _ = try db.collection("savedRecipes").addDocument(from: recipeToSave)
+            let docRef = try db.collection("savedRecipes").addDocument(from: recipeToSave)
             
-            // Add to local array immediately for better UX
-            await MainActor.run {
-                self.savedRecipes.insert(recipeToSave, at: 0)
-            }
+            // Ensure the ID is set
+            recipeToSave.id = docRef.documentID
+            
+            // Refresh the list to ensure we have the latest data
+            try await fetchSavedRecipes()
         } catch {
             throw RecipeError.saveFailed(error.localizedDescription)
         }
@@ -50,6 +51,8 @@ class RecipeService: ObservableObject {
             }
             
             await MainActor.run {
+                // Clear the array first to prevent duplicates
+                self.savedRecipes.removeAll()
                 self.savedRecipes = recipes
                 self.isLoading = false
             }

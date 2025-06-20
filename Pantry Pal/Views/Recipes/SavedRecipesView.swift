@@ -4,9 +4,13 @@ struct SavedRecipesView: View {
     @StateObject private var recipeService = RecipeService()
     @State private var showingRecipeDetail = false
     @State private var selectedRecipe: Recipe?
+    @State private var selectedServingSize = 4
+    @State private var showingServingSizeAdjustment = false
     
     var body: some View {
         NavigationView {
+            VStack(spacing: 0) {
+                servingSizeSlider
             Group {
                 if recipeService.isLoading {
                     ProgressView("Loading recipes...")
@@ -26,7 +30,7 @@ struct SavedRecipesView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
-                        ForEach(recipeService.savedRecipes) { recipe in
+                        ForEach(recipeService.savedRecipes, id: \.documentID) { recipe in
                             SavedRecipeCard(recipe: recipe) {
                                 selectedRecipe = recipe
                                 showingRecipeDetail = true
@@ -46,11 +50,84 @@ struct SavedRecipesView: View {
             }
             .sheet(isPresented: $showingRecipeDetail) {
                 if let recipe = selectedRecipe {
-                    SavedRecipeDetailView(recipe: recipe)
+                    SavedRecipeDetailView(recipe: recipe.scaled(for: selectedServingSize))
                 }
             }
         }
     }
+        private var servingSizeSlider: some View {
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Adjust serving sizes:")
+                        .font(.subheadline)
+                        .foregroundColor(.textSecondary)
+                    
+                    Spacer()
+                    
+                    Text("\(selectedServingSize)")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryOrange)
+                        .frame(minWidth: 30)
+                    
+                    Text("servings")
+                        .font(.subheadline)
+                        .foregroundColor(.textSecondary)
+                }
+                
+                HStack(spacing: 16) {
+                    Button(action: {
+                        if selectedServingSize > 1 {
+                            selectedServingSize -= 1
+                        }
+                    }) {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(selectedServingSize > 1 ? .primaryOrange : .textSecondary)
+                    }
+                    .disabled(selectedServingSize <= 1)
+                    
+                    Slider(value: Binding(
+                        get: { Double(selectedServingSize) },
+                        set: { selectedServingSize = Int($0.rounded()) }
+                    ), in: 1...12, step: 1)
+                    .accentColor(.primaryOrange)
+                    
+                    Button(action: {
+                        if selectedServingSize < 12 {
+                            selectedServingSize += 1
+                        }
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(selectedServingSize < 12 ? .primaryOrange : .textSecondary)
+                    }
+                    .disabled(selectedServingSize >= 12)
+                }
+                
+                HStack {
+                    Text("1")
+                        .font(.caption)
+                        .foregroundColor(.textSecondary)
+                    
+                    Spacer()
+                    
+                    Text("12")
+                        .font(.caption)
+                        .foregroundColor(.textSecondary)
+                }
+            }
+            .padding(.horizontal, Constants.Design.standardPadding)
+            .padding(.vertical, 12)
+            .background(Color(.systemGray6))
+            .overlay(
+                Rectangle()
+                    .frame(height: 0.5)
+                    .foregroundColor(Color(.systemGray4))
+                    .padding(.horizontal),
+                alignment: .bottom
+            )
+        }
     
     private func loadRecipes() async {
         do {
@@ -77,16 +154,25 @@ struct SavedRecipesView: View {
 
 struct SavedRecipeCard: View {
     let recipe: Recipe
+    let targetServings: Int
     let onTap: () -> Void
+    
+    private var scaledRecipe: Recipe {
+        recipe.scaled(for: targetServings)
+    }
+    
+    private var isScaled: Bool {
+        targetServings != recipe.servings
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(recipe.name)
+                Text(scaledRecipe.name)
                     .font(.headline)
                     .lineLimit(2)
                 Spacer()
-                Text(recipe.difficulty)
+                Text(scaledRecipe.difficulty)
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -95,46 +181,63 @@ struct SavedRecipeCard: View {
                     .cornerRadius(8)
             }
             
-            Text(recipe.description)
+            Text(scaledRecipe.description)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .lineLimit(3)
             
-            HStack {
-                Label(recipe.totalTime, systemImage: "clock")
-                Spacer()
-                Label("\(recipe.servings) servings", systemImage: "person.2")
-                Spacer()
-                Text(recipe.savedAt?.dateValue() ?? Date(), style: .date)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
-            
-            if !recipe.tags.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(recipe.tags.prefix(3), id: \.self) { tag in
-                            Text(tag)
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.2))
-                                .foregroundColor(.orange)
-                                .cornerRadius(4)
-                        }
-                        if recipe.tags.count > 3 {
-                            Text("+\(recipe.tags.count - 3)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
+            // Show a few key ingredients with scaled quantities
+            if scaledRecipe.ingredients.count > 0 {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Key ingredients:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    ForEach(Array(scaledRecipe.ingredients.prefix(3)), id: \.name) { ingredient in
+                        Text("• \(formatQuantity(ingredient.quantity)) \(ingredient.unit) \(ingredient.name)")
+                            .font(.caption2)
+                            .foregroundColor(isScaled ? .primaryOrange : .secondary)
+                    }
+                    
+                    if scaledRecipe.ingredients.count > 3 {
+                        Text("• and \(scaledRecipe.ingredients.count - 3) more...")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
+            
+            HStack {
+                Label(scaledRecipe.totalTime, systemImage: "clock")
+                Spacer()
+                Label("\(targetServings) servings", systemImage: "person.2")
+                    .foregroundColor(isScaled ? .primaryOrange : .primary)
+                Spacer()
+                Text(recipe.savedAt?.dateValue() ?? Date(), style: .date)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .font(.caption)
+            
+            if isScaled {
+                HStack {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.caption2)
+                        .foregroundColor(.primaryOrange)
+                    Text("Scaled from \(recipe.servings) servings")
+                        .font(.caption2)
+                        .foregroundColor(.primaryOrange)
+                        .italic()
+                }
+            }
         }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isScaled ? Color.primaryOrange.opacity(0.3) : Color(.systemGray5), lineWidth: 1)
+        )
         .onTapGesture {
             onTap()
         }
@@ -150,6 +253,14 @@ struct SavedRecipeCard: View {
             return .red
         default:
             return .gray
+        }
+    }
+    
+    private func formatQuantity(_ quantity: Double) -> String {
+        if quantity.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(Int(quantity))
+        } else {
+            return String(format: "%.2f", quantity).replacingOccurrences(of: "\\.?0+$", with: "", options: .regularExpression)
         }
     }
 }

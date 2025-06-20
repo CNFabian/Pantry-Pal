@@ -8,12 +8,20 @@ import Firebase
 
 struct RecipeDetailView: View {
     let recipe: Recipe
+    let isFromGenerator: Bool
+    let onRecipeComplete: ((Recipe) -> Void)?
     @EnvironmentObject var firestoreService: FirestoreService
     @Environment(\.dismiss) private var dismiss
     @StateObject private var recipeService = RecipeService()
     @State private var showingSaveConfirmation = false
     @State private var saveError: String?
-    @State private var currentRecipe: Recipe?
+    @State private var showingIngredientRemovalAlert = false
+
+    init(recipe: Recipe, isFromGenerator: Bool = false, onRecipeComplete: ((Recipe) -> Void)? = nil) {
+        self.recipe = recipe
+        self.isFromGenerator = isFromGenerator
+        self.onRecipeComplete = onRecipeComplete
+    }
     
     private var missingIngredients: [RecipeIngredient] {
         return recipe.ingredients.filter { recipeIngredient in
@@ -60,11 +68,15 @@ struct RecipeDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
+                        Button("Done") {
+                            if isFromGenerator {
+                                showingIngredientRemovalAlert = true
+                            } else {
+                                dismiss()
+                            }
+                        }
+                        .foregroundColor(.primaryOrange)
                     }
-                    .foregroundColor(.primaryOrange)
-                }
             }
         }
         .themedBackground()
@@ -181,19 +193,15 @@ struct RecipeDetailView: View {
             Button("Save Recipe") {
                 Task {
                     do {
-                        // Use 'recipe' if it's a parameter, or 'currentRecipe' if it's a state variable
-                        if let recipeToSave = currentRecipe { // or just 'recipe' if it's a parameter
-                            try await recipeService.saveRecipe(recipeToSave)
-                            showingSaveConfirmation = true
-                        }
+                        try await recipeService.saveRecipe(recipe)
+                        showingSaveConfirmation = true
                     } catch {
                         saveError = error.localizedDescription
                     }
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(currentRecipe == nil)
-            
+
             .alert("Recipe Saved!", isPresented: $showingSaveConfirmation) {
                 Button("OK") { }
             } message: {
@@ -206,7 +214,19 @@ struct RecipeDetailView: View {
                     Text(error)
                 }
             }
-
+            .alert("Recipe Complete!", isPresented: $showingIngredientRemovalAlert) {
+                Button("Keep Ingredients", role: .cancel) {
+                    onRecipeComplete?(recipe)
+                    dismiss()
+                }
+                Button("Remove Used Ingredients") {
+                    removeUsedIngredients()
+                    onRecipeComplete?(recipe)
+                    dismiss()
+                }
+            } message: {
+                Text("Would you like to remove the ingredients you used from your pantry?")
+            }
         }
     }
     
@@ -260,6 +280,38 @@ struct RecipeDetailView: View {
             userIngredient.quantity >= recipeIngredient.quantity &&
             !userIngredient.inTrash
         } != nil
+    }
+    
+    private func removeUsedIngredients() {
+        Task {
+            for recipeIngredient in recipe.ingredients {
+                // Find matching ingredients in pantry
+                if let matchingIngredient = firestoreService.ingredients.first(where: { userIngredient in
+                    userIngredient.name.localizedCaseInsensitiveContains(recipeIngredient.name) &&
+                    !userIngredient.inTrash
+                }) {
+                    // Calculate new quantity
+                    let newQuantity = max(0, matchingIngredient.quantity - recipeIngredient.quantity)
+                    
+                    // Create a new ingredient with updated values
+                    let updatedIngredient = Ingredient(
+                        id: matchingIngredient.id,
+                        name: matchingIngredient.name,
+                        quantity: newQuantity,
+                        unit: matchingIngredient.unit,
+                        category: matchingIngredient.category,
+                        expirationDate: matchingIngredient.expirationDate,
+                        inTrash: newQuantity == 0 ? true : matchingIngredient.inTrash, // Move to trash if quantity becomes 0
+                        trashedAt: newQuantity == 0 ? Timestamp(date: Date()) : matchingIngredient.trashedAt,
+                        createdAt: matchingIngredient.createdAt,
+                        updatedAt: Timestamp(date: Date()), // Update the timestamp
+                        userId: matchingIngredient.userId
+                    )
+                    
+                    try? await firestoreService.updateIngredient(updatedIngredient)
+                }
+            }
+        }
     }
 }
 

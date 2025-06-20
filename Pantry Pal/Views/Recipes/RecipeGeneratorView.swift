@@ -39,7 +39,21 @@ struct RecipeGeneratorView: View {
                         recipeSelectionView
                     case .viewRecipe:
                         if let recipe = generatedRecipe {
-                            RecipeDetailView(recipe: recipe)
+                            RecipeDetailView(
+                                recipe: recipe,
+                                isFromGenerator: true,
+                                onRecipeComplete: { _ in
+                                    // Reset the generator to start over
+                                    currentStep = .selectMealType
+                                    generatedRecipe = nil
+                                    selectedRecipeName = ""
+                                    recipeOptions = []
+                                }
+                            )
+                        } else {
+                            // Fallback view if recipe is nil
+                            Text("Loading recipe...")
+                                .foregroundColor(.textSecondary)
                         }
                     }
                 }
