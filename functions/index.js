@@ -1,10 +1,13 @@
-const functions = require('firebase-functions');
+const {onCall, HttpsError} = require('firebase-functions/v2/https');
+const {setGlobalOptions} = require('firebase-functions/v2');
 const axios = require('axios');
 
-// Your FatSecret credentials
-const config = functions.config();
-const FATSECRET_CLIENT_ID = config.fatsecret && config.fatsecret.client_id;
-const FATSECRET_CLIENT_SECRET = config.fatsecret && config.fatsecret.client_secret;
+// Set global options for all functions
+setGlobalOptions({region: 'us-central1'});
+
+// Your FatSecret credentials - temporarily hardcoded for testing
+const FATSECRET_CLIENT_ID = "e18d2115af38497e98de54ec848f822c";
+const FATSECRET_CLIENT_SECRET = "fb730ec6130f4f14b35ec0471da5b9f7";
 
 // Helper function to get FatSecret access token
 async function getFatSecretToken() {
@@ -28,20 +31,25 @@ async function getFatSecretToken() {
     return response.data.access_token;
   } catch (error) {
     console.error('Error getting FatSecret token:', error.response && error.response.data || error.message);
-    throw new functions.https.HttpsError('internal', 'Failed to authenticate with FatSecret');
+    throw new HttpsError('internal', 'Failed to authenticate with FatSecret');
   }
 }
 
-// Main function to search food by barcode
-exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+// Main function to search food by barcode (2nd Gen)
+exports.searchFoodByBarcode = onCall({
+  timeoutSeconds: 60,
+  memory: '256MiB',
+  cors: true
+}, async (request) => {
+  // Check authentication
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated');
   }
   
-  const barcode = data.barcode;
+  const barcode = request.data.barcode;
   
   if (!barcode) {
-    throw new functions.https.HttpsError('invalid-argument', 'Barcode is required');
+    throw new HttpsError('invalid-argument', 'Barcode is required');
   }
   
   try {
@@ -91,6 +99,6 @@ exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
     
   } catch (error) {
     console.error('Error in searchFoodByBarcode:', error.response && error.response.data || error.message);
-    throw new functions.https.HttpsError('internal', 'Failed to search for food');
+    throw new HttpsError('internal', 'Failed to search for food');
   }
 });
