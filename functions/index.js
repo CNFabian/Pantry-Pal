@@ -2,8 +2,9 @@ const functions = require('firebase-functions');
 const axios = require('axios');
 
 // Your FatSecret credentials
-const FATSECRET_CLIENT_ID = functions.config().fatsecret?.client_id;
-const FATSECRET_CLIENT_SECRET = functions.config().fatsecret?.client_secret;
+const config = functions.config();
+const FATSECRET_CLIENT_ID = config.fatsecret && config.fatsecret.client_id;
+const FATSECRET_CLIENT_SECRET = config.fatsecret && config.fatsecret.client_secret;
 
 // Helper function to get FatSecret access token
 async function getFatSecretToken() {
@@ -26,7 +27,7 @@ async function getFatSecretToken() {
     
     return response.data.access_token;
   } catch (error) {
-    console.error('Error getting FatSecret token:', error.response?.data || error.message);
+    console.error('Error getting FatSecret token:', error.response && error.response.data || error.message);
     throw new functions.https.HttpsError('internal', 'Failed to authenticate with FatSecret');
   }
 }
@@ -37,7 +38,7 @@ exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
   }
   
-  const {barcode} = data;
+  const barcode = data.barcode;
   
   if (!barcode) {
     throw new functions.https.HttpsError('invalid-argument', 'Barcode is required');
@@ -67,7 +68,7 @@ exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
       return {error: barcodeResponse.data.error};
     }
     
-    if (!barcodeResponse.data.food_id?.value) {
+    if (!barcodeResponse.data.food_id || !barcodeResponse.data.food_id.value) {
       return {error: {message: 'No food found for this barcode'}};
     }
     
@@ -89,7 +90,7 @@ exports.searchFoodByBarcode = functions.https.onCall(async (data, context) => {
     return {food: foodResponse.data.food};
     
   } catch (error) {
-    console.error('Error in searchFoodByBarcode:', error.response?.data || error.message);
+    console.error('Error in searchFoodByBarcode:', error.response && error.response.data || error.message);
     throw new functions.https.HttpsError('internal', 'Failed to search for food');
   }
 });
