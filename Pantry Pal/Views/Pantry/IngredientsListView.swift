@@ -15,6 +15,12 @@ struct IngredientsListView: View {
     @State private var showingFilterSheet = false
     @State private var showingTrashAlert = false
     @State private var ingredientToDelete: Ingredient?
+    @State private var showingBarcodeScanner = false
+    @State private var scannedBarcode: String?
+    @State private var showingFatSecretSelection = false
+    @State private var fatSecretFood: FatSecretFood?
+    @StateObject private var fatSecretService = FatSecretService()
+    @EnvironmentObject var authenticationService: AuthenticationService
     
     private var debugInfo: String {
         let ingredientCount = firestoreService.ingredients.count
@@ -74,6 +80,26 @@ struct IngredientsListView: View {
                 }
             }
             .navigationTitle("My Pantry")
+            .sheet(isPresented: $showingBarcodeScanner) {
+                BarcodeScannerView(scannedCode: $scannedBarcode, isPresented: $showingBarcodeScanner)
+            }
+            .sheet(isPresented: $showingFatSecretSelection) {
+                if let food = fatSecretFood {
+                    FatSecretIngredientSelectionView(
+                        fatSecretFood: food,
+                        isPresented: $showingFatSecretSelection,
+                        firestoreService: firestoreService,
+                        authenticationService: authenticationService
+                    )
+                }
+            }
+                    .onChange(of: scannedBarcode) { barcode in
+                        if let barcode = barcode {
+                            Task {
+                                await searchFoodByBarcode(barcode)
+                            }
+                        }
+                    }
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -92,6 +118,7 @@ struct IngredientsListView: View {
                     selectedCategory: $selectedCategory
                 )
             }
+            scannerButton
             .alert("Move to Trash", isPresented: $showingTrashAlert) {
                 Button("Cancel", role: .cancel) {
                     ingredientToDelete = nil
@@ -159,6 +186,25 @@ struct IngredientsListView: View {
             .padding(.horizontal, Constants.Design.standardPadding)
         }
         .padding(.vertical, Constants.Design.smallPadding)
+    }
+    
+    private var scannerButton: some View {
+        Button(action: {
+            showingBarcodeScanner = true
+        }) {
+            HStack {
+                Image(systemName: "barcode.viewfinder")
+                Text("Scan Barcode")
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
+                    .fill(Color.primaryOrange)
+            )
+        }
+        .padding(.horizontal, Constants.Design.standardPadding)
     }
     
     // MARK: - Loading State
@@ -309,6 +355,27 @@ struct IngredientsListView: View {
         
         ingredientToDelete = nil
     }
+    
+    private func searchFoodByBarcode(_ barcode: String) async {
+        do {
+            if let food = try await fatSecretService.searchFoodByBarcode(barcode) {
+                await MainActor.run {
+                    self.fatSecretFood = food
+                    self.showingFatSecretSelection = true
+                }
+            } else {
+                // Handle case where no food is found for the barcode
+                print("No food found for barcode: \(barcode)")
+            }
+        } catch {
+            print("Error searching for food: \(error)")
+        }
+        
+        // Reset the scanned barcode
+        await MainActor.run {
+            self.scannedBarcode = nil
+        }
+    }
 }
 
 // MARK: - Supporting Views
@@ -344,6 +411,7 @@ struct IngredientRow: View {
                 .font(.title3)
             
             VStack(alignment: .leading, spacing: 4) {
+
                 // Ingredient name
                 Text(ingredient.name)
                     .font(.headline)
