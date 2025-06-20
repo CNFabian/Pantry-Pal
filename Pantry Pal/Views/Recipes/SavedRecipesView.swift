@@ -7,127 +7,18 @@ struct SavedRecipesView: View {
     @State private var selectedServingSize = 4
     @State private var showingServingSizeAdjustment = false
     
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                servingSizeSlider
-            Group {
-                if recipeService.isLoading {
-                    ProgressView("Loading recipes...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if recipeService.savedRecipes.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "book.closed")
-                            .font(.system(size: 50))
-                            .foregroundColor(.gray)
-                        Text("No Saved Recipes")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        Text("Generate and save recipes to see them here!")
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List {
-                        ForEach(recipeService.savedRecipes, id: \.documentID) { recipe in
-                            SavedRecipeCard(recipe: recipe) {
-                                selectedRecipe = recipe
-                                showingRecipeDetail = true
-                            }
-                        }
-                        .onDelete(perform: deleteRecipes)
-                    }
-                }
-            }
-            .navigationTitle("Saved Recipes")
-            .navigationBarTitleDisplayMode(.large)
-            .task {
-                await loadRecipes()
-            }
-            .refreshable {
-                await loadRecipes()
-            }
-            .sheet(isPresented: $showingRecipeDetail) {
-                if let recipe = selectedRecipe {
-                    SavedRecipeDetailView(recipe: recipe.scaled(for: selectedServingSize))
-                }
-            }
+    private func difficultyColor(for recipe: Recipe) -> Color {
+        switch recipe.difficulty.lowercased() {
+        case "easy":
+            return .green
+        case "medium", "moderate":
+            return .orange
+        case "hard", "challenging":
+            return .red
+        default:
+            return .gray
         }
     }
-        private var servingSizeSlider: some View {
-            VStack(spacing: 8) {
-                HStack {
-                    Text("Adjust serving sizes:")
-                        .font(.subheadline)
-                        .foregroundColor(.textSecondary)
-                    
-                    Spacer()
-                    
-                    Text("\(selectedServingSize)")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primaryOrange)
-                        .frame(minWidth: 30)
-                    
-                    Text("servings")
-                        .font(.subheadline)
-                        .foregroundColor(.textSecondary)
-                }
-                
-                HStack(spacing: 16) {
-                    Button(action: {
-                        if selectedServingSize > 1 {
-                            selectedServingSize -= 1
-                        }
-                    }) {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(selectedServingSize > 1 ? .primaryOrange : .textSecondary)
-                    }
-                    .disabled(selectedServingSize <= 1)
-                    
-                    Slider(value: Binding(
-                        get: { Double(selectedServingSize) },
-                        set: { selectedServingSize = Int($0.rounded()) }
-                    ), in: 1...12, step: 1)
-                    .accentColor(.primaryOrange)
-                    
-                    Button(action: {
-                        if selectedServingSize < 12 {
-                            selectedServingSize += 1
-                        }
-                    }) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(selectedServingSize < 12 ? .primaryOrange : .textSecondary)
-                    }
-                    .disabled(selectedServingSize >= 12)
-                }
-                
-                HStack {
-                    Text("1")
-                        .font(.caption)
-                        .foregroundColor(.textSecondary)
-                    
-                    Spacer()
-                    
-                    Text("12")
-                        .font(.caption)
-                        .foregroundColor(.textSecondary)
-                }
-            }
-            .padding(.horizontal, Constants.Design.standardPadding)
-            .padding(.vertical, 12)
-            .background(Color(.systemGray6))
-            .overlay(
-                Rectangle()
-                    .frame(height: 0.5)
-                    .foregroundColor(Color(.systemGray4))
-                    .padding(.horizontal),
-                alignment: .bottom
-            )
-        }
     
     private func loadRecipes() async {
         do {
@@ -150,15 +41,142 @@ struct SavedRecipesView: View {
             }
         }
     }
-}
+    
+    private var servingSizeSlider: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Adjust serving sizes:")
+                    .font(.subheadline)
+                    .foregroundColor(.textSecondary)
+                
+                Spacer()
+                
+                Text("\(selectedServingSize)")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryOrange)
+                    .frame(minWidth: 30)
+                
+                Text("servings")
+                    .font(.subheadline)
+                    .foregroundColor(.textSecondary)
+            }
+            
+            HStack(spacing: 16) {
+                Button(action: {
+                    if selectedServingSize > 1 {
+                        selectedServingSize -= 1
+                    }
+                }) {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(selectedServingSize > 1 ? .primaryOrange : .textSecondary)
+                }
+                .disabled(selectedServingSize <= 1)
+                
+                Slider(value: Binding(
+                    get: { Double(selectedServingSize) },
+                    set: { selectedServingSize = Int($0.rounded()) }
+                ), in: 1...12, step: 1)
+                .accentColor(.primaryOrange)
+                
+                Button(action: {
+                    if selectedServingSize < 12 {
+                        selectedServingSize += 1
+                    }
+                }) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(selectedServingSize < 12 ? .primaryOrange : .textSecondary)
+                }
+                .disabled(selectedServingSize >= 12)
+            }
+            
+            HStack {
+                Text("1")
+                    .font(.caption)
+                    .foregroundColor(.textSecondary)
+                
+                Spacer()
+                
+                Text("12")
+                    .font(.caption)
+                    .foregroundColor(.textSecondary)
+            }
+        }
+        .padding(.horizontal, Constants.Design.standardPadding)
+        .padding(.vertical, 12)
+        .background(Color(.systemGray6))
+        .overlay(
+            Rectangle()
+                .frame(height: 0.5)
+                .foregroundColor(Color(.systemGray4))
+                .padding(.horizontal),
+            alignment: .bottom
+        )
+    }
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                servingSizeSlider
+                Group {
+                    if recipeService.isLoading {
+                        ProgressView("Loading recipes...")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if recipeService.savedRecipes.isEmpty {
+                        VStack(spacing: 16) {
+                            Image(systemName: "book.closed")
+                                .font(.system(size: 50))
+                                .foregroundColor(.gray)
+                            Text("No Saved Recipes")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                            Text("Generate and save recipes to see them here!")
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        List {
+                            ForEach(recipeService.savedRecipes, id: \.documentID) { recipe in
+                                SavedRecipeCard(recipe: recipe) {
+                                    selectedRecipe = recipe
+                                    showingRecipeDetail = true
+                                }
+                            }
+                            .onDelete(perform: deleteRecipes)
+                        }
+                    }
+                }
+                .navigationTitle("Saved Recipes")
+                .navigationBarTitleDisplayMode(.large)
+                .task {
+                    await loadRecipes()
+                }
+                .refreshable {
+                    await loadRecipes()
+                }
+                .sheet(isPresented: $showingRecipeDetail) {
+                    if let recipe = selectedRecipe {
+                        SavedRecipeDetailView(recipe: recipe.scaled(for: selectedServingSize))
+                    }
+                }
+            }
+        }
+        
 
+    }
+}
 struct SavedRecipeCard: View {
     let recipe: Recipe
     let targetServings: Int
     let onTap: () -> Void
+    @State private var selectedServingSize = 4
+    @State private var showingServingSizeAdjustment = false
     
     private var scaledRecipe: Recipe {
-        recipe.scaled(for: targetServings)
+        recipe.scaleEffect(CGFloat(selectedServingSize) / CGFloat(recipe.originalServings))
     }
     
     private var isScaled: Bool {
