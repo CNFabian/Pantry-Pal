@@ -25,6 +25,8 @@ class FatSecretService: ObservableObject {
             return token
         }
         
+        print("🔑 FatSecret: Requesting new access token...")
+        
         let tokenURL = URL(string: "https://oauth.fatsecret.com/connect/token")!
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
@@ -35,16 +37,86 @@ class FatSecretService: ObservableObject {
         let base64Credentials = credentialsData.base64EncodedString()
         request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
         
-        let body = "grant_type=client_credentials&scope=basic"
+        // Change scope to barcode
+        let body = "grant_type=client_credentials&scope=barcode"
         request.httpBody = body.data(using: .utf8)
         
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
+        print("🌐 FatSecret: Making OAuth request with scope=barcode")
         
-        self.accessToken = tokenResponse.access_token
-        self.tokenExpirationDate = Date().addingTimeInterval(TimeInterval(tokenResponse.expires_in))
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 FatSecret OAuth: HTTP Status: \(httpResponse.statusCode)")
+            }
+            
+            // Print raw response for debugging
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📄 FatSecret OAuth Response: \(responseString)")
+            }
+            
+            // Try to decode the response
+            do {
+                let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
+                
+                self.accessToken = tokenResponse.access_token
+                self.tokenExpirationDate = Date().addingTimeInterval(TimeInterval(tokenResponse.expires_in))
+                
+                print("✅ FatSecret: Successfully got access token")
+                return tokenResponse.access_token
+            } catch let decodingError {
+                print("💥 FatSecret: Token decoding error: \(decodingError)")
+                
+                // Try to decode as an error response
+                if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("🔍 FatSecret: Error response data: \(errorData)")
+                }
+                
+                throw FatSecretError.authenticationError
+            }
+        } catch {
+            print("💥 FatSecret: Network error during token request: \(error)")
+            throw FatSecretError.networkError(error.localizedDescription)
+        }
+    }
+    
+    // MARK: - Enhanced Network Request with Retry
+    private func performNetworkRequest<T: Codable>(url: URL, headers: [String: String] = [:], responseType: T.Type) async throws -> T {
+        var lastError: Error?
         
-        return tokenResponse.access_token
+        for attempt in 1...3 {
+            do {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 30.0
+                
+                for (key, value) in headers {
+                    request.setValue(value, forHTTPHeaderField: key)
+                }
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("📡 FatSecret: HTTP Status: \(httpResponse.statusCode) (Attempt \(attempt))")
+                    
+                    if httpResponse.statusCode == 429 {
+                        // Rate limited, wait and retry
+                        try await Task.sleep(nanoseconds: UInt64(attempt * 1_000_000_000)) // 1s, 2s, 3s delay
+                        continue
+                    }
+                }
+                
+                return try JSONDecoder().decode(responseType, from: data)
+            } catch {
+                print("❌ Network attempt \(attempt) failed: \(error)")
+                lastError = error
+                
+                if attempt < 3 {
+                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+                }
+            }
+        }
+        
+        throw lastError ?? FatSecretError.noData
     }
     
     // MARK: - Food Search by Barcode
