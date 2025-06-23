@@ -163,12 +163,13 @@ class FatSecretService: ObservableObject {
         do {
             let response = try JSONDecoder().decode(BarcodeResponse.self, from: data)
             
-            if let foodId = response.food_id?.value {
+            if let foodId = response.food_id?.value, foodId != "0" && !foodId.isEmpty {
                 print("🆔 FatSecret: Found food ID: \(foodId)")
                 return try await getFoodDetails(foodId: foodId)
             } else {
-                print("❌ FatSecret: No food_id in response")
+                print("❌ FatSecret: No valid food_id in response (got: \(response.food_id?.value ?? "nil"))")
                 return nil
+        
             }
         } catch {
             print("💥 FatSecret: JSON parsing error: \(error)")
@@ -178,6 +179,8 @@ class FatSecretService: ObservableObject {
     
     // MARK: - Get Food Details
     private func getFoodDetails(foodId: String) async throws -> FatSecretFood {
+        print("📋 FatSecret: Getting details for food ID: \(foodId)")
+        
         let token = try await getAccessToken()
         
         guard var components = URLComponents(string: baseURL) else {
@@ -197,10 +200,25 @@ class FatSecretService: ObservableObject {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let response = try JSONDecoder().decode(FoodDetailsResponse.self, from: data)
+        let (data, response) = try await URLSession.shared.data(for: request)
         
-        return response.food
+        if let httpResponse = response as? HTTPURLResponse {
+            print("📡 FatSecret Details: HTTP Status: \(httpResponse.statusCode)")
+        }
+        
+        // Print raw response for debugging
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("📄 FatSecret Details Response: \(responseString)")
+        }
+        
+        do {
+            let response = try JSONDecoder().decode(FoodDetailsResponse.self, from: data)
+            print("✅ FatSecret: Successfully decoded food details")
+            return response.food
+        } catch {
+            print("💥 FatSecret: Error decoding food details: \(error)")
+            throw FatSecretError.decodingError
+        }
     }
     
     // MARK: - Search Foods by Text
@@ -339,6 +357,37 @@ struct FatSecretFood: Codable {
 
 struct ServingsContainer: Codable {
     let serving: [FatSecretServing]
+    
+    // Custom initializer to handle both single serving and array of servings
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try to decode as array first
+        if let servingArray = try? container.decode([FatSecretServing].self, forKey: .serving) {
+            self.serving = servingArray
+        } else {
+            // If that fails, decode as single object and wrap in array
+            let singleServing = try container.decode(FatSecretServing.self, forKey: .serving)
+            self.serving = [singleServing]
+        }
+    }
+    
+    // Custom encoder to maintain the original structure when encoding
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        if serving.count == 1 {
+            // Encode as single object if only one serving
+            try container.encode(serving[0], forKey: .serving)
+        } else {
+            // Encode as array if multiple servings
+            try container.encode(serving, forKey: .serving)
+        }
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case serving
+    }
 }
 
 struct FatSecretServing: Codable, Hashable {

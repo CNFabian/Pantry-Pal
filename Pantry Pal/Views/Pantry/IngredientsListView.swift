@@ -65,6 +65,8 @@ struct IngredientsListView: View {
         "021000659340"  // Kraft Mac & Cheese
     ]
     @State private var currentTestIndex = 0
+    
+    
 
     private var testButton: some View {
         Button(action: {
@@ -89,6 +91,7 @@ struct IngredientsListView: View {
         }
         .padding(.horizontal, Constants.Design.standardPadding)
     }
+    
     
     var body: some View {
         NavigationView {
@@ -352,6 +355,24 @@ struct IngredientsListView: View {
         }
         .listStyle(.grouped)
         .scrollContentBackground(.hidden)
+    }
+    
+    private func testKnownBarcodes() {
+        let testBarcodes = [
+            "0049000042566", // Coca-Cola
+            "0012000038426", // Pepsi
+            "0051000012081", // Campbell's Soup
+            "0028400047685", // Lay's Chips
+            "0044000048532"  // Oreo
+        ]
+        
+        Task {
+            for barcode in testBarcodes {
+                print("🧪 Testing barcode: \(barcode)")
+                await searchFoodByBarcode(barcode)
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 second delay between tests
+            }
+        }
     }
     
     // MARK: - Actions

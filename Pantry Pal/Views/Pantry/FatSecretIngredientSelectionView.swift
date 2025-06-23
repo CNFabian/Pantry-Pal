@@ -10,19 +10,18 @@ struct FatSecretIngredientSelectionView: View {
     let fatSecretFood: FatSecretFood
     @Binding var isPresented: Bool
     @ObservedObject var firestoreService: FirestoreService
-    @ObservedObject var authenticationService: AuthenticationService  // Changed from authService
-    
+    @ObservedObject var authenticationService: AuthenticationService
     @State private var selectedServing: FatSecretServing
     @State private var quantity: Double = 1.0
     @State private var selectedCategory = "Other"
     @State private var expirationDate: Date = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
     @State private var isLoading = false
     
-    init(fatSecretFood: FatSecretFood, isPresented: Binding<Bool>, firestoreService: FirestoreService, authenticationService: AuthenticationService) {  // Changed parameter name
+    init(fatSecretFood: FatSecretFood, isPresented: Binding<Bool>, firestoreService: FirestoreService, authenticationService: AuthenticationService) {
         self.fatSecretFood = fatSecretFood
         self._isPresented = isPresented
         self.firestoreService = firestoreService
-        self.authenticationService = authenticationService  // Changed from authService
+        self.authenticationService = authenticationService
         self._selectedServing = State(initialValue: fatSecretFood.servings.serving.first ?? FatSecretServing(
             serving_id: "0",
             serving_description: "Unknown",
