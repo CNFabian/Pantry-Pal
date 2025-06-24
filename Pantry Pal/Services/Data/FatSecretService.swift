@@ -37,11 +37,11 @@ class FatSecretService: ObservableObject {
         let base64Credentials = credentialsData.base64EncodedString()
         request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
         
-        // Change scope to barcode
-        let body = "grant_type=client_credentials&scope=barcode recipe food"
+        // Remove scope to fix the error
+        let body = "grant_type=client_credentials"
         request.httpBody = body.data(using: .utf8)
         
-        print("🌐 FatSecret: Making OAuth request with scope=barcode")
+        print("🌐 FatSecret: Making OAuth request without scope")
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -55,29 +55,67 @@ class FatSecretService: ObservableObject {
                 print("📄 FatSecret OAuth Response: \(responseString)")
             }
             
-            // Try to decode the response
+            // Try to parse as JSON first to see what we get
+            if let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                print("🔍 FatSecret: Raw JSON response: \(jsonObject)")
+                
+                // Check if it's an error response
+                if let error = jsonObject["error"] as? String {
+                    print("❌ FatSecret: API returned error: \(error)")
+                    throw FatSecretError.authenticationError
+                }
+                
+                // Try to extract token manually first
+                if let accessToken = jsonObject["access_token"] as? String {
+                    let expiresIn = jsonObject["expires_in"] as? Int ?? 3600 // Default to 1 hour
+                    print("✅ FatSecret: Successfully extracted token manually")
+                    
+                    self.accessToken = accessToken
+                    self.tokenExpirationDate = Date().addingTimeInterval(TimeInterval(expiresIn))
+                    
+                    return accessToken
+                }
+            }
+            
+            // If manual extraction fails, try struct decoding
             do {
                 let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
                 
                 self.accessToken = tokenResponse.access_token
                 self.tokenExpirationDate = Date().addingTimeInterval(TimeInterval(tokenResponse.expires_in))
                 
-                print("✅ FatSecret: Successfully got access token")
+                print("✅ FatSecret: Successfully decoded token response")
                 return tokenResponse.access_token
             } catch let decodingError {
                 print("💥 FatSecret: Token decoding error: \(decodingError)")
                 
-                // Try to decode as an error response
-                if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("🔍 FatSecret: Error response data: \(errorData)")
+                // Print more details about the decoding error
+                if let decodingError = decodingError as? DecodingError {
+                    switch decodingError {
+                    case .keyNotFound(let key, let context):
+                        print("💥 Missing key: \(key.stringValue)")
+                        print("💥 Context: \(context.debugDescription)")
+                    case .typeMismatch(let type, let context):
+                        print("💥 Type mismatch for type: \(type)")
+                        print("💥 Context: \(context.debugDescription)")
+                    case .valueNotFound(let type, let context):
+                        print("💥 Value not found for type: \(type)")
+                        print("💥 Context: \(context.debugDescription)")
+                    case .dataCorrupted(let context):
+                        print("💥 Data corrupted: \(context.debugDescription)")
+                    @unknown default:
+                        print("💥 Unknown decoding error")
+                    }
                 }
                 
                 throw FatSecretError.authenticationError
             }
+            
         } catch {
             print("💥 FatSecret: Network error during token request: \(error)")
             throw FatSecretError.networkError(error.localizedDescription)
         }
+    }
     }
     
     // MARK: - Enhanced Network Request with Retry
@@ -219,7 +257,7 @@ class FatSecretService: ObservableObject {
             print("💥 FatSecret: Error decoding food details: \(error)")
             throw FatSecretError.decodingError
         }
-    }
+
     
     // MARK: - Search Foods by Text
     func searchFoods(query: String, maxResults: Int = 50) async throws -> [FatSecretFoodSearchResult] {
@@ -336,8 +374,21 @@ class FatSecretService: ObservableObject {
 // MARK: - Models
 struct TokenResponse: Codable {
     let access_token: String
-    let token_type: String
-    let expires_in: Int
+    let token_type: String?
+    let expires_in: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case access_token = "access_token"
+        case token_type = "token_type"
+        case expires_in = "expires_in"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        access_token = try container.decode(String.self, forKey: .access_token)
+        token_type = try? container.decode(String.self, forKey: .token_type)
+        expires_in = try? container.decode(Int.self, forKey: .expires_in)
+    }
 }
 
 struct BarcodeResponse: Codable {

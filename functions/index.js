@@ -1,9 +1,9 @@
-const {onCall, HttpsError} = require('firebase-functions/v2/https');
-const {setGlobalOptions} = require('firebase-functions/v2');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { setGlobalOptions } = require('firebase-functions/v2');
 const axios = require('axios');
 
 // Set global options for all functions
-setGlobalOptions({region: 'us-central1'});
+setGlobalOptions({ region: 'us-central1' });
 
 // Your FatSecret credentials - temporarily hardcoded for testing
 const FATSECRET_CLIENT_ID = "e18d2115af38497e98de54ec848f822c";
@@ -15,11 +15,11 @@ async function getFatSecretToken() {
     if (!FATSECRET_CLIENT_ID || !FATSECRET_CLIENT_SECRET) {
       throw new Error('FatSecret credentials not configured');
     }
-    
+
     const credentials = Buffer.from(`${FATSECRET_CLIENT_ID}:${FATSECRET_CLIENT_SECRET}`).toString('base64');
-    
-    const response = await axios.post('https://oauth.fatsecret.com/connect/token', 
-      'grant_type=client_credentials&scope=barcode',
+
+    const response = await axios.post('https://oauth.fatsecret.com/connect/token',
+      'grant_type=client_credentials&scope=premier',
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -27,7 +27,7 @@ async function getFatSecretToken() {
         }
       }
     );
-    
+
     return response.data.access_token;
   } catch (error) {
     console.error('Error getting FatSecret token:', error.response && error.response.data || error.message);
@@ -45,19 +45,19 @@ exports.searchFoodByBarcode = onCall({
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'User must be authenticated');
   }
-  
+
   const barcode = request.data.barcode;
-  
+
   if (!barcode) {
     throw new HttpsError('invalid-argument', 'Barcode is required');
   }
-  
+
   try {
     console.log(`Searching for barcode: ${barcode}`);
-    
+
     const accessToken = await getFatSecretToken();
     console.log('Got FatSecret access token');
-    
+
     const barcodeResponse = await axios.get('https://platform.fatsecret.com/rest/server.api', {
       params: {
         method: 'food.find_id_for_barcode',
@@ -68,21 +68,21 @@ exports.searchFoodByBarcode = onCall({
         'Authorization': `Bearer ${accessToken}`
       }
     });
-    
+
     console.log('Barcode search response:', barcodeResponse.data);
-    
+
     if (barcodeResponse.data.error) {
       console.log('FatSecret API error:', barcodeResponse.data.error);
-      return {error: barcodeResponse.data.error};
+      return { error: barcodeResponse.data.error };
     }
-    
+
     if (!barcodeResponse.data.food_id || !barcodeResponse.data.food_id.value) {
-      return {error: {message: 'No food found for this barcode'}};
+      return { error: { message: 'No food found for this barcode' } };
     }
-    
+
     const foodId = barcodeResponse.data.food_id.value;
     console.log(`Found food ID: ${foodId}`);
-    
+
     const foodResponse = await axios.get('https://platform.fatsecret.com/rest/server.api', {
       params: {
         method: 'food.get.v2',
@@ -93,10 +93,10 @@ exports.searchFoodByBarcode = onCall({
         'Authorization': `Bearer ${accessToken}`
       }
     });
-    
+
     console.log('Food details retrieved successfully');
-    return {food: foodResponse.data.food};
-    
+    return { food: foodResponse.data.food };
+
   } catch (error) {
     console.error('Error in searchFoodByBarcode:', error.response && error.response.data || error.message);
     throw new HttpsError('internal', 'Failed to search for food');
