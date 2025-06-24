@@ -38,7 +38,7 @@ class FatSecretService: ObservableObject {
         request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
         
         // Change scope to barcode
-        let body = "grant_type=client_credentials&scope=barcode"
+        let body = "grant_type=client_credentials&scope=barcode recipe food"
         request.httpBody = body.data(using: .utf8)
         
         print("🌐 FatSecret: Making OAuth request with scope=barcode")
@@ -304,6 +304,33 @@ class FatSecretService: ObservableObject {
         
         return response.recipe
     }
+    
+    func searchRecipes(query: String, maxResults: Int = 30) async throws -> [FatSecretRecipe] {
+        let token = try await getAccessToken()
+        
+        guard var components = URLComponents(string: baseURL) else {
+            throw FatSecretError.invalidURL
+        }
+        
+        components.queryItems = [
+            URLQueryItem(name: "method", value: "recipes.search"),
+            URLQueryItem(name: "search_expression", value: query),
+            URLQueryItem(name: "max_results", value: String(maxResults)),
+            URLQueryItem(name: "format", value: "json")
+        ]
+        
+        guard let url = components.url else {
+            throw FatSecretError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(RecipeSearchResponse.self, from: data)
+        
+        return response.recipes?.recipe ?? []
+    }
 }
 
 // MARK: - Models
@@ -455,6 +482,37 @@ struct FatSecretRecipeDetails: Codable {
 
 struct IngredientsContainer: Codable {
     let ingredient: [FatSecretIngredient]
+    
+    // Custom decoder to handle both single ingredient and array of ingredients
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try to decode as array first
+        if let ingredientArray = try? container.decode([FatSecretIngredient].self, forKey: .ingredient) {
+            self.ingredient = ingredientArray
+        } else {
+            // If that fails, decode as single object and wrap in array
+            let singleIngredient = try container.decode(FatSecretIngredient.self, forKey: .ingredient)
+            self.ingredient = [singleIngredient]
+        }
+    }
+    
+    // Custom encoder to maintain the original structure when encoding
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        if ingredient.count == 1 {
+            // Encode as single object if only one ingredient
+            try container.encode(ingredient[0], forKey: .ingredient)
+        } else {
+            // Encode as array if multiple ingredients
+            try container.encode(ingredient, forKey: .ingredient)
+        }
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case ingredient
+    }
 }
 
 struct FatSecretIngredient: Codable {
@@ -469,6 +527,37 @@ struct FatSecretIngredient: Codable {
 
 struct DirectionsContainer: Codable {
     let direction: [FatSecretDirection]
+    
+    // Custom decoder to handle both single direction and array of directions
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try to decode as array first
+        if let directionArray = try? container.decode([FatSecretDirection].self, forKey: .direction) {
+            self.direction = directionArray
+        } else {
+            // If that fails, decode as single object and wrap in array
+            let singleDirection = try container.decode(FatSecretDirection.self, forKey: .direction)
+            self.direction = [singleDirection]
+        }
+    }
+    
+    // Custom encoder to maintain the original structure when encoding
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        if direction.count == 1 {
+            // Encode as single object if only one direction
+            try container.encode(direction[0], forKey: .direction)
+        } else {
+            // Encode as array if multiple directions
+            try container.encode(direction, forKey: .direction)
+        }
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case direction
+    }
 }
 
 struct FatSecretDirection: Codable {

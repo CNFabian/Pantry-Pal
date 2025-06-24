@@ -8,6 +8,7 @@ import SwiftUI
 struct RecipeGeneratorView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var firestoreService: FirestoreService
+    @StateObject private var fatSecretService = FatSecretService()
     @StateObject private var aiService = AIService()
     
     @State private var selectedMealType = "dinner"
@@ -19,6 +20,10 @@ struct RecipeGeneratorView: View {
     @State private var generatedRecipe: Recipe?
     @State private var errorMessage = ""
     @State private var showingError = false
+    @State private var fatSecretRecipes: [FatSecretRecipe] = []
+    @State private var selectedFatSecretRecipeIds: [String] = []
+    @State private var recipePreferences = RecipePreferences()
+    @State private var showingPreferences = false
 
     private let mealTypes = ["breakfast", "lunch", "dinner", "snack", "dessert"]
     
@@ -168,6 +173,19 @@ struct RecipeGeneratorView: View {
                 }
             }
             
+            // Preferences Button
+            Button(action: { showingPreferences = true }) {
+                HStack {
+                    Image(systemName: "slider.horizontal.3")
+                    Text("Recipe Preferences")
+                }
+                .foregroundColor(.primaryOrange)
+                .padding(.vertical, 8)
+            }
+            .sheet(isPresented: $showingPreferences) {
+                RecipePreferencesView(preferences: $recipePreferences)
+            }
+            
             // Generate Button
             Button(action: generateRecipeOptions) {
                 HStack {
@@ -249,7 +267,6 @@ struct RecipeGeneratorView: View {
         }
     }
     
-    // MARK: - Actions
     private func generateRecipeOptions() {
         guard !availableIngredients.isEmpty else { return }
         
@@ -258,19 +275,65 @@ struct RecipeGeneratorView: View {
         
         Task {
             do {
-                let options = try await aiService.getRecipeSuggestions(
-                    ingredients: availableIngredients,
-                    mealType: selectedMealType
+                // Step 1: Get ingredient names and combine with meal type for better search results
+                let ingredientNames = availableIngredients.map { $0.name }
+                
+                // Option A: If you want to search by ingredients only (current method)
+                let fatSecretResults = try await fatSecretService.searchRecipesByIngredients(ingredientNames)
+                
+                // Option B: If you add the searchRecipes method to FatSecretService, use this instead:
+                // let searchQuery = "\(selectedMealType) \(ingredientNames.prefix(3).joined(separator: " "))"
+                // let fatSecretResults = try await fatSecretService.searchRecipes(
+                //     query: searchQuery,
+                //     maxResults: 30
+                // )
+                
+                // Step 2: Get details for all recipes (limited for performance)
+                var recipeDetails: [FatSecretRecipeDetails] = []
+                for recipe in fatSecretResults.prefix(20) { // Limit to 20 for performance
+                    do {
+                        let detail = try await fatSecretService.getRecipeDetails(recipeId: recipe.recipe_id)
+                        recipeDetails.append(detail)
+                    } catch {
+                        // Skip recipes that fail to load details
+                        print("Failed to load details for recipe \(recipe.recipe_id): \(error)")
+                    }
+                }
+                
+                // Make sure we have at least some recipes with details
+                guard !recipeDetails.isEmpty else {
+                    throw AIServiceError.noResponse
+                }
+                
+                // Step 3: Use AI to select best 5 recipes based on available ingredients
+                let selectedIds = try await aiService.selectBestRecipes(
+                    from: fatSecretResults,
+                    withDetails: recipeDetails,
+                    availableIngredients: availableIngredients,
+                    mealType: selectedMealType,
+                    userPreferences: recipePreferences
                 )
                 
+                // Step 4: Map selected IDs to recipe names
+                let selectedRecipes = selectedIds.compactMap { id in
+                    recipeDetails.first { $0.recipe_id == id }?.recipe_name
+                }
+                
+                // Make sure we have at least some selected recipes
+                guard !selectedRecipes.isEmpty else {
+                    throw AIServiceError.noResponse
+                }
+                
                 await MainActor.run {
-                    self.recipeOptions = options
+                    self.fatSecretRecipes = fatSecretResults
+                    self.selectedFatSecretRecipeIds = selectedIds
+                    self.recipeOptions = selectedRecipes
                     self.currentStep = .selectRecipe
                     self.isGenerating = false
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = error.localizedDescription
+                    self.errorMessage = "Failed to find recipes: \(error.localizedDescription)"
                     self.showingError = true
                     self.isGenerating = false
                 }
@@ -284,14 +347,26 @@ struct RecipeGeneratorView: View {
         
         Task {
             do {
-                let recipe = try await aiService.getRecipeDetails(
-                    recipeName: selectedRecipeName,
-                    ingredients: availableIngredients,
+                // Find the selected recipe ID
+                guard let selectedIndex = recipeOptions.firstIndex(of: selectedRecipeName),
+                      selectedIndex < selectedFatSecretRecipeIds.count else {
+                    throw AIServiceError.parsingError
+                }
+                
+                let recipeId = selectedFatSecretRecipeIds[selectedIndex]
+                
+                // Get full recipe details from FatSecret
+                let fatSecretRecipe = try await fatSecretService.getRecipeDetails(recipeId: recipeId)
+                
+                // Use AI to adapt the recipe to available ingredients
+                let adaptedRecipe = try await aiService.adaptRecipeToAvailableIngredients(
+                    recipe: fatSecretRecipe,
+                    availableIngredients: availableIngredients,
                     desiredServings: desiredServings
                 )
                 
                 await MainActor.run {
-                    self.generatedRecipe = recipe
+                    self.generatedRecipe = adaptedRecipe
                     self.currentStep = .viewRecipe
                     self.isGenerating = false
                 }

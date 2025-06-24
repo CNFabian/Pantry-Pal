@@ -5,6 +5,8 @@
 
 import Foundation
 import GoogleGenerativeAI
+import FirebaseFirestore
+
 
 class AIService: ObservableObject {
     private let model: GenerativeModel
@@ -108,6 +110,109 @@ class AIService: ObservableObject {
         8. NEVER exceed available ingredient quantities
         
         Return EXACTLY this structure with no extra text.
+        """
+        
+        let response = try await model.generateContent(prompt)
+        
+        guard let text = response.text else {
+            throw AIServiceError.noResponse
+        }
+        
+        return try parseRecipeJSON(text)
+    }
+    
+    // MARK: - FatSecret Recipe Selection
+    func selectBestRecipes(
+        from fatSecretRecipes: [FatSecretRecipe],
+        withDetails recipeDetails: [FatSecretRecipeDetails], // Changed from FatSecretRecipeDetail
+        availableIngredients: [Ingredient],
+        mealType: String,
+        userPreferences: RecipePreferences? = nil
+    ) async throws -> [String] {
+        let ingredientsText = formatIngredientsWithQuantities(availableIngredients)
+        
+        let recipesInfo = recipeDetails.map { detail in
+            let ingredients = detail.ingredients?.ingredient.map { ing in
+                "\(ing.food_name ?? "Unknown"): \(ing.ingredient_description)"
+            }.joined(separator: ", ") ?? "No ingredients"
+            
+            return """
+            Recipe: \(detail.recipe_name)
+            ID: \(detail.recipe_id)
+            Servings: \(detail.number_of_servings ?? "Unknown")
+            Ingredients: \(ingredients)
+            """
+        }.joined(separator: "\n\n")
+        
+        let prompt = """
+        I have these ingredients in my pantry with exact quantities:
+        \(ingredientsText)
+        
+        Here are recipes from FatSecret API:
+        \(recipesInfo)
+        
+        Task: Select the 5 BEST recipes that:
+        1. Can be made with my available ingredients (NEVER exceed available quantities)
+        2. Are appropriate for \(mealType)
+        3. Have most/all required ingredients available
+        4. \(userPreferences?.toPromptString() ?? "")
+        
+        Score each recipe based on:
+        - Ingredient match percentage (how many required ingredients I have)
+        - Quantity feasibility (can I make it with my quantities?)
+        - Appropriateness for \(mealType)
+        
+        Return ONLY the recipe IDs of the top 5 recipes, one per line, like:
+        recipe_id_1
+        recipe_id_2
+        recipe_id_3
+        recipe_id_4
+        recipe_id_5
+        
+        No explanations, just the IDs.
+        """
+        
+        let response = try await model.generateContent(prompt)
+        
+        guard let text = response.text else {
+            throw AIServiceError.noResponse
+        }
+        
+        return text.components(separatedBy: CharacterSet.newlines) // Fixed the .newlines reference
+            .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) } // Fixed the .whitespacesAndNewlines reference
+            .filter { !$0.isEmpty }
+    }
+
+    func adaptRecipeToAvailableIngredients(
+        recipe: FatSecretRecipeDetails, // Changed from FatSecretRecipeDetail
+        availableIngredients: [Ingredient],
+        desiredServings: Int
+    ) async throws -> Recipe {
+        let ingredientsText = formatIngredientsWithQuantities(availableIngredients)
+        
+        let recipeIngredients = recipe.ingredients?.ingredient.map { ing in
+            "\(ing.food_name ?? "Unknown"): \(ing.ingredient_description)"
+        }.joined(separator: "\n") ?? "No ingredients"
+        
+        let prompt = """
+        Original Recipe: \(recipe.recipe_name)
+        Original Servings: \(recipe.number_of_servings ?? "Unknown")
+        Desired Servings: \(desiredServings)
+        
+        Original Ingredients:
+        \(recipeIngredients)
+        
+        My Available Ingredients:
+        \(ingredientsText)
+        
+        Task: Adapt this recipe to work with my available ingredients.
+        - Match original ingredients to my pantry items
+        - Calculate exact quantities needed for \(desiredServings) servings
+        - Suggest substitutions ONLY if I have suitable alternatives
+        - Flag any critical missing ingredients
+        
+        Return a JSON recipe following the same structure as before, but adapted to my ingredients.
+        Include a "notes" field listing any substitutions or missing ingredients.
         """
         
         let response = try await model.generateContent(prompt)
