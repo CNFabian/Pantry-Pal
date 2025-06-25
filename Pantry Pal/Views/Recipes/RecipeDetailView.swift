@@ -39,7 +39,49 @@ struct RecipeDetailView: View {
                 VStack(alignment: .leading, spacing: Constants.Design.largePadding) {
                     // Header Section
                     recipeHeader
-                    
+                    // Add this section where other recipe details are displayed
+                    if let cookingTools = recipe.cookingTools, !cookingTools.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Image(systemName: "wrench.and.screwdriver.fill")
+                                    .foregroundColor(.primaryOrange)
+                                    .font(.title2)
+                                
+                                Text("Required Cooking Tools")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.textPrimary)
+                            }
+                            
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 8) {
+                                ForEach(cookingTools, id: \.self) { tool in
+                                    HStack {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                            .font(.caption)
+                                        
+                                        Text(tool)
+                                            .font(.body)
+                                            .foregroundColor(.textPrimary)
+                                        
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.backgroundCard)
+                                            .shadow(color: .black.opacity(0.05), radius: 1)
+                                    )
+                                }
+                            }
+                        }
+                        .padding(.vertical)
+                        .padding(.horizontal, Constants.Design.standardPadding)
+                    }
                     VStack(alignment: .leading, spacing: Constants.Design.standardPadding) {
                         // Recipe Info
                         recipeInfoSection
@@ -352,7 +394,7 @@ struct IngredientItemRow: View {
     let isAvailable: Bool
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 12){
             // Index
             Text("\(index)")
                 .font(.caption)
@@ -391,7 +433,6 @@ struct IngredientItemRow: View {
     }
 }
 
-// Replace the existing InstructionStepRow struct with this updated version:
 struct InstructionStepRow: View {
     let instruction: RecipeInstruction
     

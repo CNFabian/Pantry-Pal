@@ -21,9 +21,10 @@ struct Recipe: Identifiable, Codable {
     var instructions: [RecipeInstruction]
     var adjustedFor: Int?
     var isScaled: Bool
-    var scaledFrom: String?
+    var scaledFrom: Int?
     var savedAt: Timestamp?
     var userId: String?
+    let cookingTools: [String]?
     
     var documentID: String {
         return id ?? UUID().uuidString
@@ -63,43 +64,45 @@ struct Recipe: Identifiable, Codable {
     }
     
     init(id: String? = nil,
-         name: String,
-         description: String,
-         prepTime: String,
-         cookTime: String,
-         totalTime: String,
-         servings: Int,
-         difficulty: String,
-         tags: [String] = [],
-         ingredients: [RecipeIngredient],
-         instructions: [RecipeInstruction],
-         adjustedFor: Int? = nil,
-         isScaled: Bool = false,
-         scaledFrom: String? = nil,
-         savedAt: Timestamp? = nil,
-         userId: String? = nil) {
-        self.id = id
-        self.name = name
-        self.description = description
-        self.prepTime = prepTime
-        self.cookTime = cookTime
-        self.totalTime = totalTime
-        self.servings = servings
-        self.difficulty = difficulty
-        self.tags = tags
-        self.ingredients = ingredients
-        self.instructions = instructions
-        self.adjustedFor = adjustedFor
-        self.isScaled = isScaled
-        self.scaledFrom = scaledFrom
-        self.savedAt = savedAt ?? Timestamp()
-        self.userId = userId
+            name: String,
+            description: String,
+            prepTime: String,
+            cookTime: String,
+            totalTime: String,
+            servings: Int,
+            difficulty: String,
+            tags: [String] = [],
+            ingredients: [RecipeIngredient],
+            instructions: [RecipeInstruction],
+            cookingTools: [String]? = nil,
+            adjustedFor: Int? = nil,
+            isScaled: Bool = false,
+            scaledFrom: Int? = nil,
+            savedAt: Timestamp? = nil,
+            userId: String? = nil) {
+           self.id = id
+           self.name = name
+           self.description = description
+           self.prepTime = prepTime
+           self.cookTime = cookTime
+           self.totalTime = totalTime
+           self.servings = servings
+           self.difficulty = difficulty
+           self.tags = tags
+           self.ingredients = ingredients
+           self.instructions = instructions
+           self.cookingTools = cookingTools
+           self.adjustedFor = adjustedFor
+           self.isScaled = isScaled
+           self.scaledFrom = scaledFrom
+           self.savedAt = savedAt ?? Timestamp()
+           self.userId = userId
     }
     
     // MARK: - Codable Implementation
     enum CodingKeys: String, CodingKey {
         case name, description, prepTime, cookTime, totalTime, servings, difficulty
-        case tags, ingredients, instructions, adjustedFor, isScaled, scaledFrom, savedAt, userId
+        case tags, ingredients, instructions, cookingTools, adjustedFor, isScaled, scaledFrom, savedAt, userId
     }
     
     init(from decoder: Decoder) throws {
@@ -115,10 +118,11 @@ struct Recipe: Identifiable, Codable {
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         ingredients = try container.decode([RecipeIngredient].self, forKey: .ingredients)
         instructions = try container.decode([RecipeInstruction].self, forKey: .instructions)
+        cookingTools = try container.decodeIfPresent([String].self, forKey: .cookingTools)
         adjustedFor = try container.decodeIfPresent(Int.self, forKey: .adjustedFor)
         isScaled = try container.decodeIfPresent(Bool.self, forKey: .isScaled) ?? false
-        scaledFrom = try container.decodeIfPresent(String.self, forKey: .scaledFrom)
-        savedAt = try container.decodeIfPresent(Timestamp.self, forKey: .savedAt)
+        scaledFrom = try container.decodeIfPresent(Int.self, forKey: .scaledFrom)
+        savedAt = try container.decodeIfPresent(Timestamp.self, forKey: .savedAt) ?? Timestamp()
         userId = try container.decodeIfPresent(String.self, forKey: .userId)
     }
     
@@ -135,10 +139,11 @@ struct Recipe: Identifiable, Codable {
         try container.encode(tags, forKey: .tags)
         try container.encode(ingredients, forKey: .ingredients)
         try container.encode(instructions, forKey: .instructions)
+        try container.encodeIfPresent(cookingTools, forKey: .cookingTools)
         try container.encodeIfPresent(adjustedFor, forKey: .adjustedFor)
         try container.encode(isScaled, forKey: .isScaled)
         try container.encodeIfPresent(scaledFrom, forKey: .scaledFrom)
-        try container.encodeIfPresent(savedAt, forKey: .savedAt)
+        try container.encode(savedAt, forKey: .savedAt)
         try container.encodeIfPresent(userId, forKey: .userId)
     }
     
@@ -247,9 +252,10 @@ struct RecipeData: Codable {
     let ingredients: [RecipeIngredient]
     let instructions: [RecipeInstruction]
     let tags: [String]
+    let cookingTools: [String]?
     
     func toRecipe(userId: String? = nil) -> Recipe {
-        return Recipe.fromAIResponse(
+        return Recipe(
             name: name,
             description: description,
             prepTime: prepTime,
@@ -257,9 +263,10 @@ struct RecipeData: Codable {
             totalTime: totalTime,
             servings: servings,
             difficulty: difficulty,
+            tags: tags,
             ingredients: ingredients,
             instructions: instructions,
-            tags: tags,
+            cookingTools: cookingTools,
             userId: userId
         )
     }

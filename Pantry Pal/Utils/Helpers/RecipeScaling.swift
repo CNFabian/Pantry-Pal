@@ -55,7 +55,7 @@ extension Recipe {
         scaledRecipe.servings = targetServings
         scaledRecipe.adjustedFor = targetServings
         scaledRecipe.isScaled = true
-        scaledRecipe.scaledFrom = "\(servings) servings"
+        scaledRecipe.scaledFrom = servings
         
         return scaledRecipe
     }

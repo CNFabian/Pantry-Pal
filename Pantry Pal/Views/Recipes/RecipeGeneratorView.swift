@@ -275,63 +275,82 @@ struct RecipeGeneratorView: View {
         
         Task {
             do {
-                // Step 1: Get ingredient names and combine with meal type for better search results
+                print("🍳 RecipeGenerator: Starting generateRecipeOptions for \(selectedMealType)")
+                print("🍳 RecipeGenerator: Available ingredients count: \(availableIngredients.count)")
+                
+                // Step 1: Get ingredient names and search FatSecret
                 let ingredientNames = availableIngredients.map { $0.name }
+                print("🍳 RecipeGenerator: Ingredient names: \(ingredientNames)")
                 
-                // Option A: If you want to search by ingredients only (current method)
+                print("🍳 RecipeGenerator: Step 1 - Searching FatSecret for recipes")
                 let fatSecretResults = try await fatSecretService.searchRecipesByIngredients(ingredientNames)
-                
-                // Option B: If you add the searchRecipes method to FatSecretService, use this instead:
-                // let searchQuery = "\(selectedMealType) \(ingredientNames.prefix(3).joined(separator: " "))"
-                // let fatSecretResults = try await fatSecretService.searchRecipes(
-                //     query: searchQuery,
-                //     maxResults: 30
-                // )
+                print("🍳 RecipeGenerator: Found \(fatSecretResults.count) recipes from FatSecret")
                 
                 // Step 2: Get details for all recipes (limited for performance)
+                print("🍳 RecipeGenerator: Step 2 - Getting recipe details")
                 var recipeDetails: [FatSecretRecipeDetails] = []
-                for recipe in fatSecretResults.prefix(20) { // Limit to 20 for performance
+                
+                for recipe in fatSecretResults.prefix(20) {
                     do {
+                        print("🍳 RecipeGenerator: Getting details for recipe \(recipe.recipe_id) - \(recipe.recipe_name)")
                         let detail = try await fatSecretService.getRecipeDetails(recipeId: recipe.recipe_id)
                         recipeDetails.append(detail)
+                        print("🍳 RecipeGenerator: ✅ Successfully got details for \(detail.recipe_name)")
                     } catch {
-                        // Skip recipes that fail to load details
-                        print("Failed to load details for recipe \(recipe.recipe_id): \(error)")
+                        print("🍳 RecipeGenerator: ❌ Failed to load details for recipe \(recipe.recipe_id): \(error)")
                     }
                 }
                 
+                print("🍳 RecipeGenerator: Got details for \(recipeDetails.count) recipes")
+                
                 // Make sure we have at least some recipes with details
                 guard !recipeDetails.isEmpty else {
+                    print("🍳 RecipeGenerator: ❌ No recipe details available")
                     throw AIServiceError.noResponse
                 }
                 
                 // Step 3: Use AI to select best 5 recipes based on available ingredients
+                print("🍳 RecipeGenerator: Step 3 - AI selecting best recipes")
                 let selectedIds = try await aiService.selectBestRecipes(
                     from: fatSecretResults,
                     withDetails: recipeDetails,
                     availableIngredients: availableIngredients,
-                    mealType: selectedMealType,
-                    userPreferences: recipePreferences
+                    mealType: selectedMealType
                 )
                 
+                print("🍳 RecipeGenerator: AI selected \(selectedIds.count) recipe IDs: \(selectedIds)")
+                
                 // Step 4: Map selected IDs to recipe names
+                print("🍳 RecipeGenerator: Step 4 - Mapping IDs to recipe names")
                 let selectedRecipes = selectedIds.compactMap { id in
-                    recipeDetails.first { $0.recipe_id == id }?.recipe_name
+                    let recipe = recipeDetails.first { $0.recipe_id == id }
+                    print("🍳 RecipeGenerator: Mapping ID \(id) to recipe: \(recipe?.recipe_name ?? "NOT FOUND")")
+                    return recipe?.recipe_name
                 }
+                
+                print("🍳 RecipeGenerator: Mapped to \(selectedRecipes.count) recipe names: \(selectedRecipes)")
                 
                 // Make sure we have at least some selected recipes
                 guard !selectedRecipes.isEmpty else {
+                    print("🍳 RecipeGenerator: ❌ No selected recipes available")
                     throw AIServiceError.noResponse
                 }
                 
                 await MainActor.run {
+                    print("🍳 RecipeGenerator: ✅ Updating UI with results")
                     self.fatSecretRecipes = fatSecretResults
                     self.selectedFatSecretRecipeIds = selectedIds
                     self.recipeOptions = selectedRecipes
                     self.currentStep = .selectRecipe
                     self.isGenerating = false
+                    print("🍳 RecipeGenerator: ✅ UI updated successfully - currentStep: \(self.currentStep)")
                 }
+                
             } catch {
+                print("🍳 RecipeGenerator: ❌ Error in generateRecipeOptions: \(error)")
+                print("🍳 RecipeGenerator: ❌ Error type: \(type(of: error))")
+                print("🍳 RecipeGenerator: ❌ Error description: \(error.localizedDescription)")
+                
                 await MainActor.run {
                     self.errorMessage = "Failed to find recipes: \(error.localizedDescription)"
                     self.showingError = true
@@ -347,30 +366,45 @@ struct RecipeGeneratorView: View {
         
         Task {
             do {
+                print("🍳 RecipeGenerator: Starting generateRecipeDetails")
+                print("🍳 RecipeGenerator: Selected recipe name: \(selectedRecipeName)")
+                print("🍳 RecipeGenerator: Recipe options: \(recipeOptions)")
+                print("🍳 RecipeGenerator: Selected recipe IDs: \(selectedFatSecretRecipeIds)")
+                
                 // Find the selected recipe ID
                 guard let selectedIndex = recipeOptions.firstIndex(of: selectedRecipeName),
                       selectedIndex < selectedFatSecretRecipeIds.count else {
+                    print("🍳 RecipeGenerator: Error - couldn't find selected recipe index")
                     throw AIServiceError.parsingError
                 }
                 
                 let recipeId = selectedFatSecretRecipeIds[selectedIndex]
+                print("🍳 RecipeGenerator: Found recipe ID: \(recipeId)")
                 
                 // Get full recipe details from FatSecret
+                print("🍳 RecipeGenerator: Getting full recipe details from FatSecret")
                 let fatSecretRecipe = try await fatSecretService.getRecipeDetails(recipeId: recipeId)
+                print("🍳 RecipeGenerator: Got FatSecret recipe: \(fatSecretRecipe.recipe_name)")
                 
                 // Use AI to adapt the recipe to available ingredients
+                print("🍳 RecipeGenerator: Adapting recipe with AI")
                 let adaptedRecipe = try await aiService.adaptRecipeToAvailableIngredients(
                     recipe: fatSecretRecipe,
                     availableIngredients: availableIngredients,
                     desiredServings: desiredServings
                 )
                 
+                print("🍳 RecipeGenerator: Successfully adapted recipe: \(adaptedRecipe.name)")
+                
                 await MainActor.run {
                     self.generatedRecipe = adaptedRecipe
                     self.currentStep = .viewRecipe
                     self.isGenerating = false
+                    print("🍳 RecipeGenerator: Recipe generation completed successfully")
                 }
+                
             } catch {
+                print("🍳 RecipeGenerator: Error in generateRecipeDetails: \(error)")
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
                     self.showingError = true

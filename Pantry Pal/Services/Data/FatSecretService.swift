@@ -116,7 +116,6 @@ class FatSecretService: ObservableObject {
             throw FatSecretError.networkError(error.localizedDescription)
         }
     }
-    }
     
     // MARK: - Enhanced Network Request with Retry
     private func performNetworkRequest<T: Codable>(url: URL, headers: [String: String] = [:], responseType: T.Type) async throws -> T {
@@ -184,34 +183,65 @@ class FatSecretService: ObservableObject {
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        if let httpResponse = response as? HTTPURLResponse {
-            print("📡 FatSecret: HTTP Status: \(httpResponse.statusCode)")
-        }
-        
-        print("📦 FatSecret: Received data: \(data.count) bytes")
-        
-        // Print raw response for debugging
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("📄 FatSecret Response: \(responseString)")
-        }
+        request.timeoutInterval = 30.0
         
         do {
-            let response = try JSONDecoder().decode(BarcodeResponse.self, from: data)
+            let (data, response) = try await URLSession.shared.data(for: request)
             
-            if let foodId = response.food_id?.value, foodId != "0" && !foodId.isEmpty {
-                print("🆔 FatSecret: Found food ID: \(foodId)")
-                return try await getFoodDetails(foodId: foodId)
-            } else {
-                print("❌ FatSecret: No valid food_id in response (got: \(response.food_id?.value ?? "nil"))")
-                return nil
-        
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 FatSecret: HTTP Status: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode != 200 {
+                    print("❌ FatSecret: Non-200 status code: \(httpResponse.statusCode)")
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("📄 Error Response: \(responseString)")
+                    }
+                    throw FatSecretError.networkError("HTTP \(httpResponse.statusCode)")
+                }
             }
+            
+            print("📦 FatSecret: Received data: \(data.count) bytes")
+            
+            // Print raw response for debugging
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📄 FatSecret Response: \(responseString)")
+            }
+            
+            do {
+                let response = try JSONDecoder().decode(BarcodeResponse.self, from: data)
+                
+                if let foodId = response.food_id?.value, foodId != "0" && !foodId.isEmpty {
+                    print("🆔 FatSecret: Found food ID: \(foodId)")
+                    return try await getFoodDetails(foodId: foodId)
+                } else {
+                    print("❌ FatSecret: No valid food_id in response (got: \(response.food_id?.value ?? "nil"))")
+                    return nil
+                }
+            } catch {
+                print("💥 FatSecret: JSON parsing error: \(error)")
+                return nil
+            }
+            
         } catch {
-            print("💥 FatSecret: JSON parsing error: \(error)")
-            return nil
+            print("💥 FatSecret: Network error during barcode request: \(error)")
+            
+            // Check if it's a network connectivity issue
+            if let urlError = error as? URLError {
+                switch urlError.code {
+                case .notConnectedToInternet:
+                    print("❌ No internet connection")
+                case .timedOut:
+                    print("❌ Request timed out")
+                case .cannotConnectToHost:
+                    print("❌ Cannot connect to FatSecret servers")
+                case .networkConnectionLost:
+                    print("❌ Network connection lost")
+                default:
+                    print("❌ URLError: \(urlError.localizedDescription)")
+                }
+            }
+            
+            throw FatSecretError.networkError(error.localizedDescription)
         }
     }
     
@@ -237,27 +267,34 @@ class FatSecretService: ObservableObject {
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        if let httpResponse = response as? HTTPURLResponse {
-            print("📡 FatSecret Details: HTTP Status: \(httpResponse.statusCode)")
-        }
-        
-        // Print raw response for debugging
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("📄 FatSecret Details Response: \(responseString)")
-        }
+        request.timeoutInterval = 30.0
         
         do {
-            let response = try JSONDecoder().decode(FoodDetailsResponse.self, from: data)
-            print("✅ FatSecret: Successfully decoded food details")
-            return response.food
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 FatSecret Details: HTTP Status: \(httpResponse.statusCode)")
+            }
+            
+            // Print raw response for debugging
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📄 FatSecret Details Response: \(responseString)")
+            }
+            
+            do {
+                let response = try JSONDecoder().decode(FoodDetailsResponse.self, from: data)
+                print("✅ FatSecret: Successfully decoded food details")
+                return response.food
+            } catch {
+                print("💥 FatSecret: Error decoding food details: \(error)")
+                throw FatSecretError.decodingError
+            }
+            
         } catch {
-            print("💥 FatSecret: Error decoding food details: \(error)")
-            throw FatSecretError.decodingError
+            print("💥 FatSecret: Network error during food details request: \(error)")
+            throw FatSecretError.networkError(error.localizedDescription)
         }
-
+    }
     
     // MARK: - Search Foods by Text
     func searchFoods(query: String, maxResults: Int = 50) async throws -> [FatSecretFoodSearchResult] {
@@ -375,7 +412,7 @@ class FatSecretService: ObservableObject {
 struct TokenResponse: Codable {
     let access_token: String
     let token_type: String?
-    let expires_in: Int?
+    let expires_in: Int
     
     enum CodingKeys: String, CodingKey {
         case access_token = "access_token"
@@ -387,7 +424,7 @@ struct TokenResponse: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         access_token = try container.decode(String.self, forKey: .access_token)
         token_type = try? container.decode(String.self, forKey: .token_type)
-        expires_in = try? container.decode(Int.self, forKey: .expires_in)
+        expires_in = (try? container.decode(Int.self, forKey: .expires_in)) ?? 3600
     }
 }
 

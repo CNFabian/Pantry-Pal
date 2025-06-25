@@ -122,14 +122,18 @@ class AIService: ObservableObject {
     }
     
     // MARK: - FatSecret Recipe Selection
+    // MARK: - FatSecret Recipe Selection
     func selectBestRecipes(
         from fatSecretRecipes: [FatSecretRecipe],
-        withDetails recipeDetails: [FatSecretRecipeDetails], // Changed from FatSecretRecipeDetail
+        withDetails recipeDetails: [FatSecretRecipeDetails],
         availableIngredients: [Ingredient],
         mealType: String,
         userPreferences: RecipePreferences? = nil
     ) async throws -> [String] {
+        print("🤖 AIService: Starting selectBestRecipes with \(recipeDetails.count) recipes")
+        
         let ingredientsText = formatIngredientsWithQuantities(availableIngredients)
+        print("🤖 AIService: Available ingredients: \(ingredientsText)")
         
         let recipesInfo = recipeDetails.map { detail in
             let ingredients = detail.ingredients?.ingredient.map { ing in
@@ -143,6 +147,8 @@ class AIService: ObservableObject {
             Ingredients: \(ingredients)
             """
         }.joined(separator: "\n\n")
+        
+        print("🤖 AIService: Recipe info prepared for \(recipeDetails.count) recipes")
         
         let prompt = """
         I have these ingredients in my pantry with exact quantities:
@@ -172,56 +178,307 @@ class AIService: ObservableObject {
         No explanations, just the IDs.
         """
         
-        let response = try await model.generateContent(prompt)
+        print("🤖 AIService: Sending prompt to Gemini for recipe selection...")
         
-        guard let text = response.text else {
-            throw AIServiceError.noResponse
+        do {
+            let response = try await model.generateContent(prompt)
+            print("🤖 AIService: Received response from Gemini")
+            
+            guard let text = response.text else {
+                print("❌ AIService: Response text is nil")
+                throw AIServiceError.noResponse
+            }
+            
+            print("🤖 AIService: Response text: \(text)")
+            
+            let selectedIds = text.components(separatedBy: CharacterSet.newlines)
+                .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            
+            print("🤖 AIService: Parsed \(selectedIds.count) recipe IDs: \(selectedIds)")
+            
+            // Validate that the IDs actually exist in our recipe details
+            let validIds = selectedIds.filter { id in
+                recipeDetails.contains { $0.recipe_id == id }
+            }
+            
+            print("🤖 AIService: Found \(validIds.count) valid recipe IDs")
+            
+            // If no valid IDs, fall back to first few recipes
+            if validIds.isEmpty {
+                print("⚠️ AIService: No valid IDs found, falling back to first few recipes")
+                let fallbackIds = Array(recipeDetails.prefix(5)).map { $0.recipe_id }
+                return fallbackIds
+            }
+            
+            return validIds
+        } catch {
+            print("❌ AIService: Error in selectBestRecipes: \(error)")
+            throw error
         }
+    }
+    
+    // MARK: - Cooking Tools Analysis
+    func generateRequiredCookingTools(for recipe: Recipe) async throws -> [String] {
+        print("🔧 AIService: Analyzing cooking tools for: \(recipe.name)")
         
-        return text.components(separatedBy: CharacterSet.newlines) // Fixed the .newlines reference
-            .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) } // Fixed the .whitespacesAndNewlines reference
-            .filter { !$0.isEmpty }
+        let instructionsText = recipe.instructions.map { instruction in
+            "\(instruction.stepNumber). \(instruction.instruction)"
+        }.joined(separator: "\n")
+        
+        let prompt = """
+        Analyze this recipe and identify all the cooking tools, equipment, and utensils needed:
+        
+        Recipe: \(recipe.name)
+        Instructions:
+        \(instructionsText)
+        
+        Based on the cooking methods and techniques described, list ALL the tools and equipment needed.
+        Consider:
+        - Cooking vessels (pots, pans, baking dishes, etc.)
+        - Utensils (spoons, spatulas, knives, etc.)
+        - Appliances (oven, stovetop, microwave, etc.)
+        - Preparation tools (cutting board, measuring cups, etc.)
+        - Serving items if mentioned
+        
+        Return ONLY a simple list of tools, one per line, like:
+        Large skillet
+        Chef's knife
+        Cutting board
+        Measuring cups
+        Wooden spoon
+        Oven
+        
+        Be specific about sizes when important (e.g., "large pot" vs "small saucepan").
+        Don't include ingredients, only tools and equipment.
+        """
+        
+        do {
+            let response = try await model.generateContent(prompt)
+            
+            guard let text = response.text else {
+                print("❌ AIService: No response for cooking tools")
+                return []
+            }
+            
+            print("🔧 AIService: Raw tools response: \(text)")
+            
+            // Parse the tools list
+            let tools = text.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .filter { !$0.lowercased().contains("ingredient") } // Remove any ingredient mentions
+            
+            print("🔧 AIService: Parsed \(tools.count) cooking tools: \(tools)")
+            return tools
+            
+        } catch {
+            print("❌ AIService: Error analyzing cooking tools: \(error)")
+            return []
+        }
     }
 
     func adaptRecipeToAvailableIngredients(
-        recipe: FatSecretRecipeDetails, // Changed from FatSecretRecipeDetail
+        recipe: FatSecretRecipeDetails,
         availableIngredients: [Ingredient],
         desiredServings: Int
     ) async throws -> Recipe {
+        print("🤖 AIService: Starting adaptRecipeToAvailableIngredients")
+        print("🤖 AIService: Recipe: \(recipe.recipe_name)")
+        print("🤖 AIService: Desired servings: \(desiredServings)")
+        
         let ingredientsText = formatIngredientsWithQuantities(availableIngredients)
         
+        // Extract FatSecret recipe information properly
         let recipeIngredients = recipe.ingredients?.ingredient.map { ing in
             "\(ing.food_name ?? "Unknown"): \(ing.ingredient_description)"
         }.joined(separator: "\n") ?? "No ingredients"
         
+        let recipeDirections = recipe.directions?.direction.map { dir in
+            "\(dir.direction_number). \(dir.direction_description)"
+        }.joined(separator: "\n") ?? "No directions available"
+        
         let prompt = """
+        I need to adapt this FatSecret recipe to work with my available ingredients:
+        
         Original Recipe: \(recipe.recipe_name)
+        Original Description: \(recipe.recipe_description ?? "No description")
         Original Servings: \(recipe.number_of_servings ?? "Unknown")
-        Desired Servings: \(desiredServings)
+        Prep Time: \(recipe.preparation_time_min ?? "Unknown") minutes
+        Cook Time: \(recipe.cooking_time_min ?? "Unknown") minutes
         
         Original Ingredients:
         \(recipeIngredients)
         
-        My Available Ingredients:
+        Original Directions:
+        \(recipeDirections)
+        
+        My Available Ingredients with quantities:
         \(ingredientsText)
         
-        Task: Adapt this recipe to work with my available ingredients.
-        - Match original ingredients to my pantry items
-        - Calculate exact quantities needed for \(desiredServings) servings
-        - Suggest substitutions ONLY if I have suitable alternatives
-        - Flag any critical missing ingredients
+        Please create an adapted recipe for \(desiredServings) servings using ONLY my available ingredients.
         
-        Return a JSON recipe following the same structure as before, but adapted to my ingredients.
-        Include a "notes" field listing any substitutions or missing ingredients.
-        """
-        
-        let response = try await model.generateContent(prompt)
-        
-        guard let text = response.text else {
-            throw AIServiceError.noResponse
+        Return EXACTLY this JSON structure with no extra text:
+        {
+          "recipe": {
+            "name": "Adapted recipe name",
+            "description": "Brief description of the adapted dish",
+            "prepTime": "15 minutes",
+            "cookTime": "30 minutes", 
+            "totalTime": "45 minutes",
+            "servings": \(desiredServings),
+            "difficulty": "Easy",
+            "ingredients": [
+              {
+                "name": "Ingredient name from my available list",
+                "quantity": 1.5,
+                "unit": "cups",
+                "preparation": "diced"
+              }
+            ],
+            "instructions": [
+              {
+                "stepNumber": 1,
+                "instruction": "Detailed cooking instruction",
+                "duration": 5,
+                "tip": "Helpful cooking tip"
+              }
+            ],
+            "tags": ["adapted", "homemade"],
+            "cookingTools": ["Large skillet", "Chef's knife", "Cutting board"]
+          }
         }
         
-        return try parseRecipeJSON(text)
+        IMPORTANT: Only use ingredients from my available list. Do not add any ingredients I don't have.
+        """
+        
+        print("🤖 AIService: Sending adaptation prompt to Gemini...")
+        
+        do {
+            let response = try await model.generateContent(prompt)
+            
+            guard let text = response.text else {
+                print("❌ AIService: No response text from Gemini")
+                throw AIServiceError.noResponse
+            }
+            
+            print("🤖 AIService: Raw adaptation response length: \(text.count) characters")
+            print("🤖 AIService: First 500 characters: \(String(text.prefix(500)))")
+            
+            // Clean and parse the JSON
+            let cleanedText = cleanJSONResponse(text)
+            print("🤖 AIService: Cleaned JSON length: \(cleanedText.count) characters")
+            
+            do {
+                let parsedRecipe = try parseRecipeJSON(cleanedText)
+                print("✅ AIService: Successfully parsed adapted recipe: \(parsedRecipe.name)")
+                
+                // Generate cooking tools for the adapted recipe
+                print("🔧 AIService: Generating cooking tools...")
+                let cookingTools = try await generateRequiredCookingTools(for: parsedRecipe)
+                
+                // Create a new recipe with cooking tools
+                let recipeWithTools = Recipe(
+                    name: parsedRecipe.name,
+                    description: parsedRecipe.description,
+                    prepTime: parsedRecipe.prepTime,
+                    cookTime: parsedRecipe.cookTime,
+                    totalTime: parsedRecipe.totalTime,
+                    servings: parsedRecipe.servings,
+                    difficulty: parsedRecipe.difficulty,
+                    tags: parsedRecipe.tags,
+                    ingredients: parsedRecipe.ingredients,
+                    instructions: parsedRecipe.instructions,
+                    cookingTools: cookingTools,
+                    userId: parsedRecipe.userId
+                )
+                
+                return recipeWithTools
+                
+            } catch let jsonError {
+                print("❌ AIService: JSON parsing failed: \(jsonError)")
+                print("❌ AIService: Cleaned text was: \(cleanedText)")
+                
+                // Create fallback recipe
+                let fallbackRecipe = createFallbackRecipe(
+                    from: recipe,
+                    availableIngredients: availableIngredients,
+                    desiredServings: desiredServings
+                )
+                return fallbackRecipe
+            }
+            
+        } catch {
+            print("❌ AIService: Error in adaptRecipeToAvailableIngredients: \(error)")
+            throw error
+        }
+    }
+    
+    private func createFallbackRecipe(
+        from originalRecipe: FatSecretRecipeDetails,
+        availableIngredients: [Ingredient],
+        desiredServings: Int
+    ) -> Recipe {
+        print("🔄 AIService: Creating fallback recipe")
+        
+        // Create basic ingredients from available ingredients
+        let fallbackRecipeIngredients = availableIngredients.prefix(5).map { ingredient in
+            RecipeIngredient(
+                name: ingredient.name,
+                quantity: min(ingredient.quantity / 4, 1.0), // Use a fraction of available
+                unit: ingredient.unit,
+                preparation: nil
+            )
+        }
+        
+        // Create basic instructions based on FatSecret directions if available
+        var instructions: [RecipeInstruction] = []
+        
+        if let directions = originalRecipe.directions?.direction {
+            instructions = directions.enumerated().map { index, direction in
+                RecipeInstruction(
+                    stepNumber: index + 1,
+                    instruction: direction.direction_description,
+                    duration: 5,
+                    tip: "Adapted from original recipe - adjust as needed."
+                )
+            }
+        } else {
+            // Fallback instructions if no directions available
+            instructions = [
+                RecipeInstruction(
+                    stepNumber: 1,
+                    instruction: "Prepare all ingredients according to the original \(originalRecipe.recipe_name) recipe.",
+                    duration: 10,
+                    tip: "This is an adapted version based on your available ingredients."
+                ),
+                RecipeInstruction(
+                    stepNumber: 2,
+                    instruction: "Follow the general cooking method for \(originalRecipe.recipe_name), adjusting quantities as needed.",
+                    duration: 20,
+                    tip: "Taste and adjust seasonings as you cook."
+                )
+            ]
+        }
+        
+        // Calculate total time safely
+        let prepTime = Int(originalRecipe.preparation_time_min ?? "15") ?? 15
+        let cookTime = Int(originalRecipe.cooking_time_min ?? "30") ?? 30
+        let calculatedTotalTime = prepTime + cookTime
+        
+        return Recipe(
+            name: "Adapted \(originalRecipe.recipe_name)",
+            description: originalRecipe.recipe_description ?? "An adapted version using your available ingredients.",
+            prepTime: "\(originalRecipe.preparation_time_min ?? "15") minutes",
+            cookTime: "\(originalRecipe.cooking_time_min ?? "30") minutes",
+            totalTime: "\(calculatedTotalTime) minutes",
+            servings: desiredServings,
+            difficulty: "Medium",
+            tags: ["adapted", "homemade"],
+            ingredients: Array(fallbackRecipeIngredients),
+            instructions: instructions,
+            cookingTools: ["Large pot", "Wooden spoon", "Cutting board", "Chef's knife"] // Basic fallback tools
+        )
     }
     
     // MARK: - Helper Methods
@@ -274,15 +531,21 @@ class AIService: ObservableObject {
     }
     
     private func cleanJSONResponse(_ text: String) -> String {
-        // Remove any text before the first { and after the last }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        if let startIndex = trimmed.firstIndex(of: "{"),
-           let endIndex = trimmed.lastIndex(of: "}") {
-            return String(trimmed[startIndex...endIndex])
+        // Remove any markdown code blocks
+        let withoutMarkdown = trimmed
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Find the JSON object
+        if let startIndex = withoutMarkdown.firstIndex(of: "{"),
+           let endIndex = withoutMarkdown.lastIndex(of: "}") {
+            return String(withoutMarkdown[startIndex...endIndex])
         }
         
-        return trimmed
+        return withoutMarkdown
     }
 }
 
