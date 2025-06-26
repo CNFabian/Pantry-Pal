@@ -345,7 +345,7 @@ struct GeneratedRecipeDetailView: View {
     
     var scaledRecipe: Recipe {
         let scalingFactor = Double(selectedServingSize) / Double(recipe.servings)
-        return recipe.scaled(by: scalingFactor, newServings: selectedServingSize)
+        return recipe.scaled(for: selectedServingSize)
     }
     
     private var difficultyColor: Color {
