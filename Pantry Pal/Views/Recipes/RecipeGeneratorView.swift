@@ -24,6 +24,10 @@ struct RecipeGeneratorView: View {
     @State private var selectedFatSecretRecipeIds: [String] = []
     @State private var recipePreferences = RecipePreferences()
     @State private var showingPreferences = false
+    @State private var selectedRecipe: Recipe?
+    @State private var showingRecipeDetail = false
+    @State private var showingSaveConfirmation = false
+    @StateObject private var recipeService = RecipeService()
 
     private let mealTypes = ["breakfast", "lunch", "dinner", "snack", "dessert"]
     
@@ -42,24 +46,102 @@ struct RecipeGeneratorView: View {
                         mealTypeSelectionView
                     case .selectRecipe:
                         recipeSelectionView
-                    case .viewRecipe:
-                        if let recipe = generatedRecipe {
-                            RecipeDetailView(
-                                recipe: recipe,
-                                isFromGenerator: true,
-                                onRecipeComplete: { _ in
-                                    // Reset the generator to start over
-                                    currentStep = .selectMealType
-                                    generatedRecipe = nil
-                                    selectedRecipeName = ""
-                                    recipeOptions = []
+                        case .viewRecipe:
+                            if let recipe = generatedRecipe {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    // Recipe Card similar to SavedRecipeCard
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Text(recipe.name)
+                                                .font(.headline)
+                                                .lineLimit(2)
+                                            Spacer()
+                                            Text(recipe.difficulty)
+                                                .font(.caption)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(difficultyColor(for: recipe.difficulty).opacity(0.2))
+                                                .foregroundColor(difficultyColor(for: recipe.difficulty))
+                                                .cornerRadius(8)
+                                        }
+                                        
+                                        HStack {
+                                            Label(recipe.formattedTotalTime, systemImage: "clock")
+                                            Spacer()
+                                            Label("\(recipe.servings) servings", systemImage: "person.2")
+                                        }
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        
+                                        if !recipe.tags.isEmpty {
+                                            ScrollView(.horizontal, showsIndicators: false) {
+                                                HStack(spacing: 8) {
+                                                    ForEach(recipe.tags, id: \.self) { tag in
+                                                        Text(tag)
+                                                            .font(.caption)
+                                                            .padding(.horizontal, 8)
+                                                            .padding(.vertical, 4)
+                                                            .background(Color.orange.opacity(0.2))
+                                                            .foregroundColor(.orange)
+                                                            .cornerRadius(8)
+                                                    }
+                                                }
+                                                .padding(.horizontal)
+                                            }
+                                        }
+                                    }
+                                    .padding()
+                                    .background(Color(UIColor.systemGray6))
+                                    .cornerRadius(12)
+                                    
+                                    // Action Buttons
+                                    HStack(spacing: 12) {
+                                        Button("View Details") {
+                                            selectedRecipe = recipe
+                                            showingRecipeDetail = true
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .tint(.primaryOrange)
+                                        
+                                        Button("Save Recipe") {
+                                            Task {
+                                                do {
+                                                    try await recipeService.saveRecipe(recipe)
+                                                    showingSaveConfirmation = true
+                                                } catch {
+                                                    errorMessage = error.localizedDescription
+                                                    showingError = true
+                                                }
+                                            }
+                                        }
+                                        .sheet(isPresented: $showingRecipeDetail) {
+                                            if let recipe = selectedRecipe {
+                                                SavedRecipeDetailView(recipe: recipe)
+                                            }
+                                        }
+                                        .alert("Recipe Saved!", isPresented: $showingSaveConfirmation) {
+                                            Button("OK") { }
+                                        } message: {
+                                            Text("Recipe has been saved to your collection!")
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.primaryOrange)
+                                    }
+                                    
+                                    Button("Generate Another") {
+                                        currentStep = .selectMealType
+                                        generatedRecipe = nil
+                                        selectedRecipeName = ""
+                                        recipeOptions = []
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .foregroundColor(.secondary)
                                 }
-                            )
-                        } else {
-                            // Fallback view if recipe is nil
-                            Text("Loading recipe...")
-                                .foregroundColor(.textSecondary)
-                        }
+                                .padding(.horizontal, Constants.Design.standardPadding)
+                            } else {
+                                Text("Loading recipe...")
+                                    .foregroundColor(.textSecondary)
+                            }
                     }
                 }
                 
@@ -264,6 +346,19 @@ struct RecipeGeneratorView: View {
                     .foregroundColor(.primaryOrange)
                     .padding(.vertical, 12)
             }
+        }
+    }
+    
+    private func difficultyColor(for difficulty: String) -> Color {
+        switch difficulty.lowercased() {
+        case "easy":
+            return .green
+        case "medium", "moderate":
+            return .orange
+        case "hard", "challenging":
+            return .red
+        default:
+            return .gray
         }
     }
     
