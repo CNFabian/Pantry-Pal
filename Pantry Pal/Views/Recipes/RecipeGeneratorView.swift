@@ -147,8 +147,7 @@ struct RecipeGeneratorView: View {
                         .padding()
                         .background(
                             RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
-                                .fill(selectedMealType == mealType ? Color.primaryOrange : Color.backgroundCard)
-                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                                .fill(selectedMealType == mealType ? Color.primaryOrange : Color(.systemGray6))
                         )
                     }
                 }
@@ -156,62 +155,40 @@ struct RecipeGeneratorView: View {
             
             // Servings Selection
             VStack(alignment: .leading, spacing: 12) {
-                Text("Number of servings:")
+                Text("Servings:")
                     .font(.headline)
                     .foregroundColor(.textPrimary)
                 
                 HStack {
-                    Button(action: {
+                    Button("-") {
                         if desiredServings > 1 {
                             desiredServings -= 1
                         }
-                    }) {
-                        Image(systemName: "minus.circle")
-                            .font(.title2)
-                            .foregroundColor(desiredServings > 1 ? .primaryOrange : .textSecondary)
                     }
-                    .disabled(desiredServings <= 1)
+                    .buttonStyle(QuantityButtonStyle())
                     
                     Text("\(desiredServings)")
-                        .font(.title)
+                        .font(.title3)
                         .fontWeight(.semibold)
-                        .frame(minWidth: 50)
+                        .frame(minWidth: 40)
                     
-                    Button(action: {
+                    Button("+") {
                         if desiredServings < 12 {
                             desiredServings += 1
                         }
-                    }) {
-                        Image(systemName: "plus.circle")
-                            .font(.title2)
-                            .foregroundColor(desiredServings < 12 ? .primaryOrange : .textSecondary)
                     }
-                    .disabled(desiredServings >= 12)
+                    .buttonStyle(QuantityButtonStyle())
                 }
-            }
-            
-            // Preferences Button
-            Button(action: { showingPreferences = true }) {
-                HStack {
-                    Image(systemName: "slider.horizontal.3")
-                    Text("Recipe Preferences")
-                }
-                .foregroundColor(.primaryOrange)
-                .padding(.vertical, 8)
-            }
-            .sheet(isPresented: $showingPreferences) {
-                RecipePreferencesView(preferences: $recipePreferences)
             }
             
             // Generate Button
-            Button(action: generateRecipeOptions) {
+            Button(action: generateRecipes) {
                 HStack {
                     if isGenerating {
                         ProgressView()
-                            .tint(.white)
                             .scaleEffect(0.8)
+                            .tint(.white)
                     }
-                    
                     Text(isGenerating ? "Finding Recipes..." : "Find Recipes")
                         .fontWeight(.semibold)
                 }
@@ -262,7 +239,6 @@ struct RecipeGeneratorView: View {
                             if isGenerating && selectedRecipeName == recipe {
                                 ProgressView()
                                     .scaleEffect(0.8)
-                                    .tint(.primaryOrange)
                             } else {
                                 Image(systemName: "chevron.right")
                                     .foregroundColor(.textSecondary)
@@ -271,48 +247,42 @@ struct RecipeGeneratorView: View {
                         .padding()
                         .background(
                             RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
-                                .fill(Color.backgroundCard)
-                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                                .fill(Color(.systemGray6))
                         )
                     }
                     .disabled(isGenerating)
                 }
             }
             
-            // Back Button
-            Button(action: {
+            Button("Back to Meal Selection") {
                 currentStep = .selectMealType
-                recipeOptions = []
-            }) {
-                Text("Choose Different Meal Type")
-                    .foregroundColor(.primaryOrange)
-                    .padding(.vertical, 12)
             }
-            .disabled(isGenerating)
+            .foregroundColor(.primaryOrange)
         }
     }
     
     // MARK: - Generation Functions
-    private func generateRecipeOptions() {
+    private func generateRecipes() {
         Task {
             isGenerating = true
             do {
-                print("🍳 RecipeGenerator: Starting recipe generation for \(selectedMealType)")
+                print("🍳 RecipeGenerator: Starting recipe generation for meal type: \(selectedMealType)")
                 
-                // Use existing AIService method to get recipe suggestions
                 let recipes = try await aiService.getRecipeSuggestions(
                     ingredients: availableIngredients,
                     mealType: selectedMealType
                 )
                 
+                print("🍳 RecipeGenerator: Generated \(recipes.count) recipe options")
+                
                 await MainActor.run {
                     self.recipeOptions = recipes
                     self.currentStep = .selectRecipe
                     self.isGenerating = false
-                    print("🍳 RecipeGenerator: Generated \(recipes.count) recipe options")
                 }
+                
             } catch {
-                print("🍳 RecipeGenerator: Error generating options: \(error)")
+                print("🍳 RecipeGenerator: Error in generateRecipes: \(error)")
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
                     self.showingError = true
@@ -328,7 +298,6 @@ struct RecipeGeneratorView: View {
             do {
                 print("🍳 RecipeGenerator: Generating detailed recipe for: \(selectedRecipeName)")
                 
-                // Use existing AIService method to get recipe details
                 let recipe = try await aiService.getRecipeDetails(
                     recipeName: selectedRecipeName,
                     ingredients: availableIngredients,
@@ -374,16 +343,13 @@ struct GeneratedRecipeDetailView: View {
         self._selectedServingSize = State(initialValue: recipe.servings)
     }
     
-    private var scaledRecipe: Recipe {
-        recipe.scaled(for: selectedServingSize)
-    }
-    
-    private var isScaled: Bool {
-        selectedServingSize != recipe.servings
+    var scaledRecipe: Recipe {
+        let scalingFactor = Double(selectedServingSize) / Double(recipe.servings)
+        return recipe.scaled(by: scalingFactor, newServings: selectedServingSize)
     }
     
     private var difficultyColor: Color {
-        switch recipe.difficulty.lowercased() {
+        switch scaledRecipe.difficulty.lowercased() {
         case "easy":
             return .green
         case "medium", "moderate":
@@ -395,45 +361,48 @@ struct GeneratedRecipeDetailView: View {
         }
     }
     
-    private var missingIngredients: [RecipeIngredient] {
-        return scaledRecipe.ingredients.filter { recipeIngredient in
-            !firestoreService.ingredients.contains { userIngredient in
-                userIngredient.name.localizedCaseInsensitiveContains(recipeIngredient.name) &&
-                userIngredient.quantity >= recipeIngredient.quantity &&
-                !userIngredient.inTrash
-            }
-        }
-    }
-    
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Constants.Design.largePadding) {
+            VStack(spacing: 24) {
                 // Header Section
                 recipeHeader
                 
-                // Recipe Action Buttons
-                actionButtonsSection
-                
-                // Serving Size Adjustment
+                // Recipe Meta Info
                 servingSizeSection
                 
-                // Cooking Tools (if available)
-                if let cookingTools = scaledRecipe.cookingTools, !cookingTools.isEmpty {
-                    cookingToolsSection(tools: cookingTools)
+                // Phases Section (Precook and Cook)
+                VStack(alignment: .leading, spacing: 16) {
+                    // Check if recipe has phases
+                    let phases = scaledRecipe.organizeIntoPhases()
+                    let finalPhases = phases.isEmpty ? scaledRecipe.organizeIntoPhasesFallback() : phases
+                    
+                    ForEach(Array(finalPhases.enumerated()), id: \.offset) { index, phase in
+                        let phaseType = index == 0 ? PhaseType.precook : PhaseType.cook
+                        RecipePhaseView(phase: phase, phaseType: phaseType)
+                    }
                 }
+                .padding(.horizontal, Constants.Design.standardPadding)
                 
-                // Missing Ingredients Alert
-                if !missingIngredients.isEmpty {
-                    missingIngredientsSection
+                // Instructions Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Instructions")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.textPrimary)
+                    
+                    VStack(spacing: 12) {
+                        ForEach(scaledRecipe.instructions, id: \.stepNumber) { instruction in
+                            InstructionStepRow(instruction: instruction)
+                        }
+                    }
                 }
+                .padding(.horizontal, Constants.Design.standardPadding)
                 
-                // Recipe Content (Ingredients and Instructions)
-                recipeContentSection
-                
-                Spacer(minLength: 50)
+                // Action Buttons
+                actionButtonsSection
             }
         }
-        .navigationTitle(scaledRecipe.name)
+        .navigationTitle("Generated Recipe")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -481,35 +450,6 @@ struct GeneratedRecipeDetailView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Constants.Design.standardPadding)
         }
-    }
-    
-    // MARK: - Action Buttons Section
-    private var actionButtonsSection: some View {
-        VStack(spacing: 12) {
-            Button("Save Recipe") {
-                onSaveRecipe()
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.primaryOrange)
-            .frame(maxWidth: .infinity)
-            
-            HStack(spacing: 12) {
-                Button("Generate Another") {
-                    onGenerateAnother()
-                }
-                .buttonStyle(.bordered)
-                .tint(.primaryOrange)
-                .frame(maxWidth: .infinity)
-                
-                Button("Back to List") {
-                    onBack()
-                }
-                .buttonStyle(.bordered)
-                .tint(.secondary)
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding(.horizontal, Constants.Design.standardPadding)
     }
     
     // MARK: - Serving Size Section
@@ -578,136 +518,36 @@ struct GeneratedRecipeDetailView: View {
                             .foregroundColor(selectedServingSize < 12 ? .primaryOrange : .textSecondary)
                     }
                     .disabled(selectedServingSize >= 12)
-                    
-                    if isScaled {
-                        Spacer()
-                        Button("Reset to \(recipe.servings)") {
-                            selectedServingSize = recipe.servings
-                        }
-                        .font(.caption)
-                        .foregroundColor(.primaryOrange)
-                    }
-                }
-            }
-            
-            // Tags
-            if !scaledRecipe.tags.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(scaledRecipe.tags, id: \.self) { tag in
-                            Text(tag)
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.orange.opacity(0.2))
-                                .foregroundColor(.orange)
-                                .cornerRadius(8)
-                        }
-                    }
-                    .padding(.horizontal, Constants.Design.standardPadding)
                 }
             }
         }
         .padding(.horizontal, Constants.Design.standardPadding)
     }
     
-    // MARK: - Cooking Tools Section
-    private func cookingToolsSection(tools: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "wrench.and.screwdriver.fill")
-                    .foregroundColor(.primaryOrange)
-                    .font(.title2)
-                
-                Text("Required Cooking Tools")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+    // MARK: - Action Buttons Section
+    private var actionButtonsSection: some View {
+        VStack(spacing: 12) {
+            Button("Save Recipe") {
+                onSaveRecipe()
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.primaryOrange)
+            .frame(maxWidth: .infinity)
             
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 8) {
-                ForEach(tools, id: \.self) { tool in
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.caption)
-                        Text(tool)
-                            .font(.subheadline)
-                            .foregroundColor(.textPrimary)
-                        Spacer()
-                    }
-                    .padding(.vertical, 4)
+            HStack(spacing: 12) {
+                Button("Generate Another") {
+                    onGenerateAnother()
                 }
-            }
-        }
-        .padding(.horizontal, Constants.Design.standardPadding)
-    }
-    
-    // MARK: - Missing Ingredients Section
-    private var missingIngredientsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
-                Text("Missing Ingredients")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.orange)
-            }
-            
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(missingIngredients, id: \.name) { ingredient in
-                    HStack {
-                        Image(systemName: "minus.circle")
-                            .foregroundColor(.red)
-                            .font(.caption)
-                        
-                        Text("\(ingredient.quantity.formatted()) \(ingredient.unit) \(ingredient.name)")
-                            .font(.subheadline)
-                        
-                        Spacer()
-                    }
-                }
-            }
-            .padding()
-            .background(Color.orange.opacity(0.1))
-            .cornerRadius(8)
-        }
-        .padding(.horizontal, Constants.Design.standardPadding)
-    }
-    
-    // MARK: - Recipe Content Section
-    private var recipeContentSection: some View {
-        VStack(alignment: .leading, spacing: Constants.Design.largePadding) {
-            // Ingredients Section
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Ingredients")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.textPrimary)
+                .buttonStyle(.bordered)
+                .tint(.secondary)
+                .frame(maxWidth: .infinity)
                 
-                VStack(spacing: 8) {
-                    ForEach(Array(scaledRecipe.ingredients.enumerated()), id: \.offset) { index, ingredient in
-                        IngredientItemRow(
-                            ingredient: ingredient,
-                            index: index + 1,
-                            isAvailable: hasIngredient(ingredient)
-                        )
-                    }
+                Button("Back to List") {
+                    onBack()
                 }
-            }
-            
-            // Instructions Section
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Instructions")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.textPrimary)
-                
-                VStack(spacing: 12) {
-                    ForEach(scaledRecipe.instructions, id: \.stepNumber) { instruction in
-                        InstructionStepRow(instruction: instruction)
-                    }
-                }
+                .buttonStyle(.bordered)
+                .tint(.secondary)
+                .frame(maxWidth: .infinity)
             }
         }
         .padding(.horizontal, Constants.Design.standardPadding)
@@ -728,6 +568,78 @@ enum RecipeGenerationStep {
     case selectRecipe
     case viewRecipe
 }
+
+// MARK: - Supporting Views
+struct InfoCard: View {
+    let icon: String
+    let title: String
+    let value: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
+            
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.textSecondary)
+            
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.textPrimary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
+                .fill(Color(.systemGray6))
+        )
+    }
+}
+
+struct InstructionStepRow: View {
+    let instruction: RecipeInstruction
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Step \(instruction.stepNumber)")
+                    .font(.headline)
+                    .foregroundColor(.primaryOrange)
+                
+                if let duration = instruction.duration {
+                    Spacer()
+                    Text("\(duration) min")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.primaryOrange.opacity(0.2))
+                        .foregroundColor(.primaryOrange)
+                        .cornerRadius(4)
+                }
+            }
+            
+            Text(instruction.instruction)
+                .font(.body)
+                .foregroundColor(.textPrimary)
+            
+            if let tip = instruction.tip, !tip.isEmpty {
+                Text("💡 Tip: \(tip)")
+                    .font(.caption)
+                    .foregroundColor(.textSecondary)
+                    .padding(.top, 4)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
+// Remove duplicate QuantityButtonStyle since it already exists
 
 #Preview {
     RecipeGeneratorView()
