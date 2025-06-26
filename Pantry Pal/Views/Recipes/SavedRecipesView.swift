@@ -199,6 +199,19 @@ struct SavedRecipeCard: View {
                     .cornerRadius(8)
             }
             
+                                VStack(alignment: .leading, spacing: 16) {
+                                    let phases = recipe.organizeIntoPhases()
+                                    // Use fallback if no tools are distributed properly
+                                    let finalPhases = phases.allSatisfy({ $0.cookingTools.isEmpty }) ?
+                                                    recipe.organizeIntoPhasesFallback() : phases
+                                    
+                                    ForEach(Array(finalPhases.enumerated()), id: \.offset) { index, phase in
+                                        let phaseType = index == 0 ? PhaseType.precook : PhaseType.cook
+                                        RecipePhaseView(phase: phase, phaseType: phaseType)
+                                    }
+                                }
+                                .padding(.horizontal)
+            
             Text(scaledRecipe.description)
                 .font(.subheadline)
                 .foregroundColor(.secondary)

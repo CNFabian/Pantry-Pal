@@ -180,146 +180,185 @@ struct Recipe: Identifiable, Codable {
     }
 }
 
-// MARK: - Recipe Extensions
+// MARK: - Phase Organization Extension
 extension Recipe {
-    // For AI Service compatibility
-    static func fromAIResponse(
-        name: String,
-        description: String,
-        prepTime: String,
-        cookTime: String,
-        totalTime: String,
-        servings: Int,
-        difficulty: String,
-        ingredients: [RecipeIngredient],
-        instructions: [RecipeInstruction],
-        tags: [String] = [],
-        userId: String? = nil
-    ) -> Recipe {
-        return Recipe(
-            name: name,
-            description: description,
-            prepTime: prepTime,
-            cookTime: cookTime,
-            totalTime: totalTime,
-            servings: servings,
-            difficulty: difficulty,
-            tags: tags,
-            ingredients: ingredients,
-            instructions: instructions,
-            savedAt: Timestamp(),
-            userId: userId
-        )
-    }
-    
     func organizeIntoPhases() -> [RecipePhase] {
-         let precookKeywords = ["prep", "chop", "dice", "mince", "slice", "wash", "rinse", "marinate", "soak", "measure", "mix", "combine", "whisk", "beat", "cut", "peel", "trim"]
-         let cookKeywords = ["cook", "bake", "fry", "sauté", "simmer", "boil", "roast", "grill", "steam", "broil", "heat", "warm", "brown", "sear"]
-         
-         var precookIngredients: [RecipeIngredient] = []
-         var cookIngredients: [RecipeIngredient] = []
-         var precookTools: Set<String> = []
-         var cookTools: Set<String> = []
-         
-         // Analyze instructions to determine phases
-         for instruction in instructions {
-             let lowercasedInstruction = instruction.instruction.lowercased()
-             let instructionIngredients = instruction.ingredients
-             let instructionEquipment = instruction.equipment
-             
-             let isPrecook = precookKeywords.contains { keyword in
-                 lowercasedInstruction.contains(keyword)
-             }
-             
-             let isCook = cookKeywords.contains { keyword in
-                 lowercasedInstruction.contains(keyword)
-             }
-             
-             // Add ingredients mentioned in this instruction to appropriate phase
-             for ingredientName in instructionIngredients {
-                 if let ingredient = ingredients.first(where: { $0.name.localizedCaseInsensitiveContains(ingredientName) }) {
-                     if isPrecook && !precookIngredients.contains(where: { $0.name == ingredient.name }) {
-                         precookIngredients.append(ingredient)
-                     } else if isCook && !cookIngredients.contains(where: { $0.name == ingredient.name }) {
-                         cookIngredients.append(ingredient)
-                     }
-                 }
-             }
-             
-             // Add equipment to appropriate phase
-             for equipment in instructionEquipment {
-                 if isPrecook {
-                     precookTools.insert(equipment)
-                 } else if isCook {
-                     cookTools.insert(equipment)
-                 }
-             }
-         }
-         
-         // Add any remaining ingredients to precook phase if not already assigned
-         for ingredient in ingredients {
-             if !precookIngredients.contains(where: { $0.name == ingredient.name }) &&
-                !cookIngredients.contains(where: { $0.name == ingredient.name }) {
-                 precookIngredients.append(ingredient)
-             }
-         }
-         
-         // Add any remaining cooking tools to appropriate phases
-         if let allCookingTools = cookingTools {
-             let prepTools = ["cutting board", "knife", "chef's knife", "measuring cups", "measuring spoons", "mixing bowl", "whisk", "spatula"]
-             
-             for tool in allCookingTools {
-                 let toolLower = tool.lowercased()
-                 let isPrep = prepTools.contains { prepTool in
-                     toolLower.contains(prepTool)
-                 }
-                 
-                 if isPrep {
-                     precookTools.insert(tool)
-                 } else {
-                     cookTools.insert(tool)
-                 }
-             }
-         }
-         
-         return [
-             RecipePhase(
-                 name: PhaseType.precook.rawValue,
-                 ingredients: precookIngredients,
-                 cookingTools: Array(precookTools).sorted(),
-                 description: PhaseType.precook.description
-             ),
-             RecipePhase(
-                 name: PhaseType.cook.rawValue,
-                 ingredients: cookIngredients,
-                 cookingTools: Array(cookTools).sorted(),
-                 description: PhaseType.cook.description
-             )
-         ]
-     }
-    
-    // Validation helpers
-    var isValid: Bool {
-        return !name.isEmpty &&
-               !description.isEmpty &&
-               servings > 0 &&
-               !ingredients.isEmpty &&
-               !instructions.isEmpty
-    }
-    
-    // Difficulty color helper
-    var difficultyColor: Color {
-        switch difficulty.lowercased() {
-        case "easy":
-            return .green
-        case "medium", "moderate":
-            return .orange
-        case "hard", "challenging":
-            return .red
-        default:
-            return .gray
+        let precookKeywords = ["prep", "chop", "dice", "mince", "slice", "wash", "rinse", "marinate", "soak", "measure", "mix", "combine", "whisk", "beat", "cut", "peel", "trim", "season", "prepare"]
+        let cookKeywords = ["cook", "bake", "fry", "sauté", "simmer", "boil", "roast", "grill", "steam", "broil", "heat", "warm", "brown", "sear", "stir", "flip", "turn"]
+        
+        var precookIngredients: [RecipeIngredient] = []
+        var cookIngredients: [RecipeIngredient] = []
+        var precookTools: Set<String> = []
+        var cookTools: Set<String> = []
+        
+        // Analyze instructions to determine phases
+        for instruction in instructions {
+            let lowercasedInstruction = instruction.instruction.lowercased()
+            
+            let isPrecookInstruction = precookKeywords.contains { keyword in
+                lowercasedInstruction.contains(keyword)
+            }
+            
+            let isCookInstruction = cookKeywords.contains { keyword in
+                lowercasedInstruction.contains(keyword)
+            }
+            
+            // If instruction has specific ingredients/equipment arrays, use those
+            if !instruction.ingredients.isEmpty || !instruction.equipment.isEmpty {
+                for ingredientName in instruction.ingredients {
+                    if let ingredient = ingredients.first(where: { $0.name.localizedCaseInsensitiveContains(ingredientName) }) {
+                        if isPrecookInstruction && !precookIngredients.contains(where: { $0.name == ingredient.name }) {
+                            precookIngredients.append(ingredient)
+                        } else if isCookInstruction && !cookIngredients.contains(where: { $0.name == ingredient.name }) {
+                            cookIngredients.append(ingredient)
+                        }
+                    }
+                }
+                
+                for equipment in instruction.equipment {
+                    if isPrecookInstruction {
+                        precookTools.insert(equipment)
+                    } else if isCookInstruction {
+                        cookTools.insert(equipment)
+                    }
+                }
+            } else {
+                // Fallback: analyze instruction text for ingredients and tools
+                for ingredient in ingredients {
+                    if lowercasedInstruction.contains(ingredient.name.lowercased()) {
+                        if isPrecookInstruction && !precookIngredients.contains(where: { $0.name == ingredient.name }) {
+                            precookIngredients.append(ingredient)
+                        } else if isCookInstruction && !cookIngredients.contains(where: { $0.name == ingredient.name }) {
+                            cookIngredients.append(ingredient)
+                        }
+                    }
+                }
+                
+                // Analyze instruction text for cooking tools
+                if let allCookingTools = cookingTools {
+                    for tool in allCookingTools {
+                        if lowercasedInstruction.contains(tool.lowercased()) {
+                            if isPrecookInstruction {
+                                precookTools.insert(tool)
+                            } else if isCookInstruction {
+                                cookTools.insert(tool)
+                            }
+                        }
+                    }
+                }
+            }
         }
+        
+        // Add any remaining ingredients to precook phase if not already assigned
+        for ingredient in ingredients {
+            if !precookIngredients.contains(where: { $0.name == ingredient.name }) &&
+               !cookIngredients.contains(where: { $0.name == ingredient.name }) {
+                precookIngredients.append(ingredient)
+            }
+        }
+        
+        // Distribute remaining cooking tools based on typical usage
+        if let allCookingTools = cookingTools {
+            let prepToolKeywords = ["cutting board", "knife", "chef's knife", "measuring cup", "measuring spoon", "mixing bowl", "whisk", "spatula", "peeler", "grater"]
+            let cookToolKeywords = ["pan", "pot", "skillet", "oven", "stove", "grill", "fryer", "steamer", "broiler", "saucepan", "stockpot", "baking", "sheet"]
+            
+            for tool in allCookingTools {
+                let toolLower = tool.lowercased()
+                let alreadyAssigned = precookTools.contains(tool) || cookTools.contains(tool)
+                
+                if !alreadyAssigned {
+                    let isPrep = prepToolKeywords.contains { keyword in
+                        toolLower.contains(keyword)
+                    }
+                    let isCook = cookToolKeywords.contains { keyword in
+                        toolLower.contains(keyword)
+                    }
+                    
+                    if isPrep {
+                        precookTools.insert(tool)
+                    } else if isCook {
+                        cookTools.insert(tool)
+                    } else {
+                        // Default to precook for ambiguous tools
+                        precookTools.insert(tool)
+                    }
+                }
+            }
+        }
+        
+        return [
+            RecipePhase(
+                name: PhaseType.precook.rawValue,
+                ingredients: precookIngredients,
+                cookingTools: Array(precookTools).sorted(),
+                description: PhaseType.precook.description
+            ),
+            RecipePhase(
+                name: PhaseType.cook.rawValue,
+                ingredients: cookIngredients,
+                cookingTools: Array(cookTools).sorted(),
+                description: PhaseType.cook.description
+            )
+        ]
     }
+    
+    // Manual method to better distribute cooking tools when AI data is incomplete
+        func organizeIntoPhasesFallback() -> [RecipePhase] {
+            // Separate ingredients by typical usage patterns
+            let prepIngredients = ingredients.filter { ingredient in
+                let name = ingredient.name.lowercased()
+                return name.contains("spice") || name.contains("herb") || name.contains("salt") ||
+                       name.contains("pepper") || ingredient.preparation != nil
+            }
+            
+            let cookIngredients = ingredients.filter { ingredient in
+                !prepIngredients.contains(where: { $0.name == ingredient.name })
+            }
+            
+            // Distribute cooking tools
+            var precookTools: [String] = []
+            var cookTools: [String] = []
+            
+            if let allTools = cookingTools {
+                for tool in allTools {
+                    let toolLower = tool.lowercased()
+                    
+                    // Prep tools
+                    if toolLower.contains("knife") || toolLower.contains("cutting") ||
+                       toolLower.contains("measuring") || toolLower.contains("bowl") ||
+                       toolLower.contains("whisk") || toolLower.contains("spatula") ||
+                       toolLower.contains("peeler") || toolLower.contains("grater") {
+                        precookTools.append(tool)
+                    }
+                    // Cooking tools
+                    else if toolLower.contains("pan") || toolLower.contains("pot") ||
+                            toolLower.contains("oven") || toolLower.contains("stove") ||
+                            toolLower.contains("skillet") || toolLower.contains("grill") ||
+                            toolLower.contains("baking") || toolLower.contains("sheet") {
+                        cookTools.append(tool)
+                    }
+                    // Default to prep for ambiguous tools
+                    else {
+                        precookTools.append(tool)
+                    }
+                }
+            }
+            
+            return [
+                RecipePhase(
+                    name: PhaseType.precook.rawValue,
+                    ingredients: prepIngredients.isEmpty ? Array(ingredients.prefix(ingredients.count / 2)) : prepIngredients,
+                    cookingTools: precookTools.sorted(),
+                    description: PhaseType.precook.description
+                ),
+                RecipePhase(
+                    name: PhaseType.cook.rawValue,
+                    ingredients: cookIngredients.isEmpty ? Array(ingredients.suffix(from: ingredients.count / 2)) : cookIngredients,
+                    cookingTools: cookTools.sorted(),
+                    description: PhaseType.cook.description
+                )
+            ]
+        }
 }
 
 // MARK: - Response Models for AI Service

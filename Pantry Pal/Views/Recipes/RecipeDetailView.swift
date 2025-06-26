@@ -33,6 +33,17 @@ struct RecipeDetailView: View {
         }
     }
     
+    private var recipePhasesSection: some View {
+        let phases = recipe.organizeIntoPhases()
+        
+        return VStack(alignment: .leading, spacing: 16) {
+            ForEach(Array(phases.enumerated()), id: \.offset) { index, phase in
+                let phaseType = index == 0 ? PhaseType.precook : PhaseType.cook
+                RecipePhaseView(phase: phase, phaseType: phaseType)
+            }
+        }
+    }
+    
     var body: some View {
         NavigationView {
             ScrollView {
@@ -82,23 +93,23 @@ struct RecipeDetailView: View {
                         .padding(.vertical)
                         .padding(.horizontal, Constants.Design.standardPadding)
                     }
+                                        VStack(alignment: .leading, spacing: 16) {
+                                            let phases = recipe.organizeIntoPhases()
+                                            // Use fallback if no tools are distributed properly
+                                            let finalPhases = phases.allSatisfy({ $0.cookingTools.isEmpty }) ?
+                                                            recipe.organizeIntoPhasesFallback() : phases
+                                            
+                                            ForEach(Array(finalPhases.enumerated()), id: \.offset) { index, phase in
+                                                let phaseType = index == 0 ? PhaseType.precook : PhaseType.cook
+                                                RecipePhaseView(phase: phase, phaseType: phaseType)
+                                            }
+                                        }
+                                        .padding(.horizontal)
                     VStack(alignment: .leading, spacing: Constants.Design.standardPadding) {
                         // Recipe Info
                         recipeInfoSection
                         
                         Divider()
-                        
-                        // MARK: - Recipe Phases Section
-                           private var recipePhasesSection: some View {
-                               VStack(alignment: .leading, spacing: 16) {
-                                   let phases = recipe.organizeIntoPhases()
-                                   
-                                   ForEach(Array(phases.enumerated()), id: \.offset) { index, phase in
-                                       let phaseType = index == 0 ? PhaseType.precook : PhaseType.cook
-                                       RecipePhaseView(phase: phase, phaseType: phaseType)
-                                   }
-                               }
-                           }
                         
                         // Missing Ingredients Alert
                         if !missingIngredients.isEmpty {

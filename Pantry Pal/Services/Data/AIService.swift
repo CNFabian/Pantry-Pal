@@ -70,34 +70,36 @@ class AIService: ObservableObject {
         - If an ingredient is limited, adjust the recipe accordingly
         
         Return EXACTLY this JSON structure with no extra text:
-        {
-          "recipe": {
-            "name": "Recipe title",
-            "description": "Brief description of the dish",
-            "prepTime": "time in minutes",
-            "cookTime": "time in minutes", 
-            "totalTime": "time in minutes",
-            "servings": \(desiredServings),
-            "difficulty": "Easy/Medium/Hard",
-            "ingredients": [
-              {
-                "name": "Ingredient name",
-                "quantity": 1.5,
-                "unit": "cups/tbsp/etc",
-                "preparation": "diced/minced/etc (optional)"
-              }
-            ],
-            "instructions": [
-              {
-                "stepNumber": 1,
-                "instruction": "Full instruction text for step 1",
-                "duration": 5,
-                "tip": "Optional helpful tip for this step"
-              }
-            ],
-            "tags": ["quick", "vegetarian", "italian", "etc"]
-          }
-        }
+                {
+                  "recipe": {
+                    "name": "Recipe title",
+                    "description": "Brief description of the dish",
+                    "prepTime": "time in minutes",
+                    "cookTime": "time in minutes", 
+                    "totalTime": "time in minutes",
+                    "servings": \(desiredServings),
+                    "difficulty": "Easy/Medium/Hard",
+                    "ingredients": [
+                      {
+                        "name": "Ingredient name",
+                        "quantity": 1.5,
+                        "unit": "cups/tbsp/etc",
+                        "preparation": "diced/minced/etc (optional)"
+                      }
+                    ],
+                    "instructions": [
+                      {
+                        "stepNumber": 1,
+                        "instruction": "Full instruction text for step 1",
+                        "duration": 5,
+                        "tip": "Optional helpful tip for this step",
+                        "ingredients": ["ingredient1", "ingredient2"],
+                        "equipment": ["knife", "cutting board"]
+                      }
+                    ],
+                    "tags": ["quick", "vegetarian", "italian", "etc"]
+                  }
+                }
         
         IMPORTANT INSTRUCTION GUIDELINES:
                 1. Break down complex steps into separate, simpler steps
