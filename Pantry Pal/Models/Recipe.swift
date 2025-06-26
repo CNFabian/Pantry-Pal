@@ -212,6 +212,92 @@ extension Recipe {
         )
     }
     
+    func organizeIntoPhases() -> [RecipePhase] {
+         let precookKeywords = ["prep", "chop", "dice", "mince", "slice", "wash", "rinse", "marinate", "soak", "measure", "mix", "combine", "whisk", "beat", "cut", "peel", "trim"]
+         let cookKeywords = ["cook", "bake", "fry", "sauté", "simmer", "boil", "roast", "grill", "steam", "broil", "heat", "warm", "brown", "sear"]
+         
+         var precookIngredients: [RecipeIngredient] = []
+         var cookIngredients: [RecipeIngredient] = []
+         var precookTools: Set<String> = []
+         var cookTools: Set<String> = []
+         
+         // Analyze instructions to determine phases
+         for instruction in instructions {
+             let lowercasedInstruction = instruction.instruction.lowercased()
+             let instructionIngredients = instruction.ingredients
+             let instructionEquipment = instruction.equipment
+             
+             let isPrecook = precookKeywords.contains { keyword in
+                 lowercasedInstruction.contains(keyword)
+             }
+             
+             let isCook = cookKeywords.contains { keyword in
+                 lowercasedInstruction.contains(keyword)
+             }
+             
+             // Add ingredients mentioned in this instruction to appropriate phase
+             for ingredientName in instructionIngredients {
+                 if let ingredient = ingredients.first(where: { $0.name.localizedCaseInsensitiveContains(ingredientName) }) {
+                     if isPrecook && !precookIngredients.contains(where: { $0.name == ingredient.name }) {
+                         precookIngredients.append(ingredient)
+                     } else if isCook && !cookIngredients.contains(where: { $0.name == ingredient.name }) {
+                         cookIngredients.append(ingredient)
+                     }
+                 }
+             }
+             
+             // Add equipment to appropriate phase
+             for equipment in instructionEquipment {
+                 if isPrecook {
+                     precookTools.insert(equipment)
+                 } else if isCook {
+                     cookTools.insert(equipment)
+                 }
+             }
+         }
+         
+         // Add any remaining ingredients to precook phase if not already assigned
+         for ingredient in ingredients {
+             if !precookIngredients.contains(where: { $0.name == ingredient.name }) &&
+                !cookIngredients.contains(where: { $0.name == ingredient.name }) {
+                 precookIngredients.append(ingredient)
+             }
+         }
+         
+         // Add any remaining cooking tools to appropriate phases
+         if let allCookingTools = cookingTools {
+             let prepTools = ["cutting board", "knife", "chef's knife", "measuring cups", "measuring spoons", "mixing bowl", "whisk", "spatula"]
+             
+             for tool in allCookingTools {
+                 let toolLower = tool.lowercased()
+                 let isPrep = prepTools.contains { prepTool in
+                     toolLower.contains(prepTool)
+                 }
+                 
+                 if isPrep {
+                     precookTools.insert(tool)
+                 } else {
+                     cookTools.insert(tool)
+                 }
+             }
+         }
+         
+         return [
+             RecipePhase(
+                 name: PhaseType.precook.rawValue,
+                 ingredients: precookIngredients,
+                 cookingTools: Array(precookTools).sorted(),
+                 description: PhaseType.precook.description
+             ),
+             RecipePhase(
+                 name: PhaseType.cook.rawValue,
+                 ingredients: cookIngredients,
+                 cookingTools: Array(cookTools).sorted(),
+                 description: PhaseType.cook.description
+             )
+         ]
+     }
+    
     // Validation helpers
     var isValid: Bool {
         return !name.isEmpty &&

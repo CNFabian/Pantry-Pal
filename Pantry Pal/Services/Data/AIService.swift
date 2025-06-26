@@ -100,14 +100,16 @@ class AIService: ObservableObject {
         }
         
         IMPORTANT INSTRUCTION GUIDELINES:
-        1. Break down complex steps into separate, simpler steps
-        2. Each step should focus on ONE primary action
-        3. Maximum 2-3 sentences per step
-        4. Include estimated duration in minutes for each step
-        5. Add helpful tips that might not be obvious to beginners
-        6. Number steps sequentially, never skip numbers
-        7. Explicitly mention temperatures, timing and technique details
-        8. NEVER exceed available ingredient quantities
+                1. Break down complex steps into separate, simpler steps
+                2. Each step should focus on ONE primary action
+                3. Maximum 2-3 sentences per step
+                4. Include estimated duration in minutes for each step
+                5. Add helpful tips that might not be obvious to beginners
+                6. Number steps sequentially, never skip numbers
+                7. Explicitly mention temperatures, timing and technique details
+                8. NEVER exceed available ingredient quantities
+                9. For each instruction, include "ingredients" array with ingredient names used in that step
+                10. For each instruction, include "equipment" array with tools/equipment used in that step
         
         Return EXACTLY this structure with no extra text.
         """

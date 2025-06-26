@@ -39,7 +39,7 @@ struct RecipeDetailView: View {
                 VStack(alignment: .leading, spacing: Constants.Design.largePadding) {
                     // Header Section
                     recipeHeader
-                    // Add this section where other recipe details are displayed
+                 
                     if let cookingTools = recipe.cookingTools, !cookingTools.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
@@ -88,13 +88,17 @@ struct RecipeDetailView: View {
                         
                         Divider()
                         
-                        // Ingredients Section
-                        ingredientsSection
-                        
-                        Divider()
-                        
-                        // Instructions Section
-                        instructionsSection
+                        // MARK: - Recipe Phases Section
+                           private var recipePhasesSection: some View {
+                               VStack(alignment: .leading, spacing: 16) {
+                                   let phases = recipe.organizeIntoPhases()
+                                   
+                                   ForEach(Array(phases.enumerated()), id: \.offset) { index, phase in
+                                       let phaseType = index == 0 ? PhaseType.precook : PhaseType.cook
+                                       RecipePhaseView(phase: phase, phaseType: phaseType)
+                                   }
+                               }
+                           }
                         
                         // Missing Ingredients Alert
                         if !missingIngredients.isEmpty {

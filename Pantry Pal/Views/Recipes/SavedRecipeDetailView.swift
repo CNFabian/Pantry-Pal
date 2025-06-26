@@ -63,56 +63,16 @@ struct SavedRecipeDetailView: View {
                     .padding()
                     .background(Color(UIColor.systemGray6))
                     .cornerRadius(12)
-                    
-                    // Ingredients Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Ingredients")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        ForEach(recipe.ingredients.indices, id: \.self) { index in
-                            let ingredient = recipe.ingredients[index]
-                            HStack {
-                                Text("•")
-                                    .foregroundColor(.orange)
-                                    .fontWeight(.bold)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack {
-                                        Text("\(ingredient.quantity.formatted()) \(ingredient.unit)")
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(.orange)
-                                        Text(ingredient.name)
-                                    }
-                                    if let prep = ingredient.preparation, !prep.isEmpty {
-                                        Text(prep)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .italic()
-                                    }
-                                }
-                                Spacer()
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                    .padding()
-                    .background(Color(UIColor.systemBackground))
-                    .cornerRadius(12)
-                    
-                    // Instructions Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Instructions")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        ForEach(recipe.instructions.indices, id: \.self) { index in
-                            let instruction = recipe.instructions[index]
-                            InstructionCard(instruction: instruction, isCompleted: index < currentStep)
-                                .onTapGesture {
-                                    currentStep = index + 1
-                                }
-                        }
-                    }
+
+                                        VStack(alignment: .leading, spacing: 16) {
+                                            let phases = recipe.organizeIntoPhases()
+                                            
+                                            ForEach(Array(phases.enumerated()), id: \.offset) { index, phase in
+                                                let phaseType = index == 0 ? PhaseType.precook : PhaseType.cook
+                                                RecipePhaseView(phase: phase, phaseType: phaseType)
+                                            }
+                                        }
+                                        .padding(.horizontal)
                 }
                 .padding()
             }
