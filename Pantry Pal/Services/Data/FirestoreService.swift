@@ -11,6 +11,32 @@ import Combine
 class FirestoreService: ObservableObject {
     private let db = Firestore.firestore()
     
+    func configureFirestoreForReliability() {
+           let settings = FirestoreSettings()
+           settings.isPersistenceEnabled = true
+           settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
+           db.settings = settings
+           
+           print("✅ Firestore configured for improved reliability")
+       }
+       
+       func monitorFirestoreConnection() {
+           db.collection("_connection_test").addSnapshotListener(includeMetadataChanges: true) { snapshot, error in
+               if let error = error {
+                   print("🔴 Firestore connection error: \(error)")
+                   return
+               }
+               
+               guard let snapshot = snapshot else { return }
+               
+               if snapshot.metadata.isFromCache {
+                   print("⚠️ Firestore data from cache - offline mode")
+               } else {
+                   print("✅ Firestore connected - online mode")
+               }
+           }
+       }
+    
     @Published var ingredients: [Ingredient] = []
     @Published var savedRecipes: [Recipe] = []
     @Published var notifications: [NotificationEntry] = []

@@ -29,7 +29,6 @@ class GeminiService: NSObject, ObservableObject {
     @Published var conversationHistory: [ChatMessage] = []
     @Published var connectionStatus: ConnectionStatus = .ready
     @Published var speechRecognitionText = ""
-    @Published var firestoreService: FirestoreService?
     
     enum ConnectionStatus: Equatable {
         case ready
@@ -73,14 +72,12 @@ class GeminiService: NSObject, ObservableObject {
             
             Your capabilities:
             - Help users scan barcodes to add items to their pantry
-            - Access and discuss their current pantry inventory (when context is provided)
-            - Suggest recipes based on available ingredients in their pantry
+            - Discuss pantry inventory and ingredients
+            - Suggest recipes based on available ingredients
             - Talk about food categories, expiration dates, and organization
             - Provide cooking tips and food storage advice
             - Share food-related fun facts
             - Guide users through app actions like "scan that barcode!" or "add it to your pantry!"
-            
-            IMPORTANT: When users ask about their pantry or what ingredients they have, I will provide you with their current pantry context. Use this information to give accurate, helpful responses about their specific ingredients.
             
             What you CANNOT discuss:
             - Topics unrelated to food, cooking, or pantry management
@@ -112,9 +109,6 @@ class GeminiService: NSObject, ObservableObject {
     private func setupSpeech() {
         speechSynthesizer.delegate = self
         
-        // Configure audio session properly
-        configureAudioSession()
-        
         // Request speech recognition permission
         SFSpeechRecognizer.requestAuthorization { authStatus in
             DispatchQueue.main.async {
@@ -123,45 +117,11 @@ class GeminiService: NSObject, ObservableObject {
                     print("✅ Speech recognition authorized")
                 case .denied, .restricted, .notDetermined:
                     print("❌ Speech recognition not authorized")
-                    self.connectionStatus = .error("Speech recognition not authorized")
                 @unknown default:
                     print("❌ Unknown speech recognition status")
                 }
             }
         }
-    }
-    
-    private func configureAudioSession() {
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            print("✅ Audio session configured successfully")
-        } catch {
-            print("❌ Failed to configure audio session: \(error)")
-            DispatchQueue.main.async {
-                self.connectionStatus = .error("Audio setup failed")
-            }
-        }
-    }
-    
-    private func createPantryContext() -> String {
-        guard let firestoreService = firestoreService else {
-            return "I don't have access to your pantry data right now."
-        }
-        
-        let ingredients = firestoreService.ingredients.filter { !$0.inTrash }
-        
-        if ingredients.isEmpty {
-            return "Your pantry appears to be empty right now."
-        }
-        
-        let ingredientList = ingredients.map { ingredient in
-            let status = ingredient.isExpired ? " (expired)" : ingredient.isExpiringSoon ? " (expiring soon)" : ""
-            return "- \(ingredient.name): \(ingredient.quantity) \(ingredient.unit)\(status)"
-        }.joined(separator: "\n")
-        
-        return "Here's what's currently in your pantry:\n\(ingredientList)"
     }
     
     // MARK: - Voice Recognition
@@ -284,18 +244,8 @@ class GeminiService: NSObject, ObservableObject {
             connectionStatus = .processingRequest
             isProcessing = true
             
-            // Add pantry context to user messages when they ask about ingredients/pantry
-            var messageWithContext = text
-            if text.lowercased().contains("pantry") ||
-               text.lowercased().contains("ingredient") ||
-               text.lowercased().contains("have") ||
-               text.lowercased().contains("recipe") {
-                let pantryContext = createPantryContext()
-                messageWithContext = "\(text)\n\nContext: \(pantryContext)"
-            }
-            
             do {
-                let response = try await chat?.sendMessage(messageWithContext)
+                let response = try await chat?.sendMessage(text)
                 if let responseText = response?.text {
                     currentResponse = responseText
                     let aiMessage = ChatMessage(text: responseText, isUser: false, timestamp: Date())
