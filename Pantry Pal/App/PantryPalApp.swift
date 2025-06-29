@@ -1,5 +1,5 @@
 //
-//  PantryPalApp.swift
+//  Pantry_PalApp.swift
 //  Pantry Pal
 //
 
@@ -7,11 +7,13 @@ import SwiftUI
 import Firebase
 
 @main
-struct PantryPalApp: App {
+struct Pantry_PalApp: App {
     @StateObject private var authService = AuthenticationService()
     @StateObject private var firestoreService = FirestoreService()
+    @StateObject private var fatSecretService = FatSecretService()
     
     init() {
+        // Configure Firebase when the app starts
         FirebaseApp.configure()
     }
     
@@ -20,9 +22,7 @@ struct PantryPalApp: App {
             ContentView()
                 .environmentObject(authService)
                 .environmentObject(firestoreService)
-                .onAppear {
-                    authService.listenToAuthState()
-                }
+                .environmentObject(fatSecretService)
         }
     }
 }

@@ -71,6 +71,7 @@ extension Notification.Name {
 struct MainTabView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var firestoreService: FirestoreService
+    @EnvironmentObject var fatSecretService: FatSecretService
     
     var body: some View {
         TabView {
@@ -97,6 +98,12 @@ struct MainTabView: View {
                         Image(systemName: "book.fill")
                         Text("Recipes")
                     }
+            GeminiChatView()
+                .tabItem {
+                    Image(systemName: "message.circle.fill")
+                    Text("AI Chat")
+                }
+                .environmentObject(fatSecretService) // Make sure to pass your FatSecret service
             
             NotificationsView()
                 .tabItem {
