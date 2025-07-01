@@ -18,14 +18,19 @@ struct GeminiChatView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Status bar
-                statusBar
-                
-                // Chat messages
-                chatMessagesView
-                
-                // Voice and input controls
-                inputControlsArea
+                // Error state check
+                if case .error(_) = geminiService.connectionStatus {
+                    errorStateView
+                } else {
+                    // Status bar
+                    statusBar
+                    
+                    // Chat messages
+                    chatMessagesView
+                    
+                    // Voice and input controls
+                    inputControlsArea
+                }
             }
             .navigationTitle("Pantry Pal AI 🎙️")
             .navigationBarTitleDisplayMode(.inline)
@@ -63,6 +68,32 @@ struct GeminiChatView: View {
                 }
             }
         }
+    }
+    
+    private var errorStateView: some View {
+        VStack(spacing: Constants.Design.standardPadding) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.red)
+            
+            Text("AI Assistant Unavailable")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            if case .error(let message) = geminiService.connectionStatus {
+                Text(message)
+                    .font(.body)
+                    .foregroundColor(.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button("Retry") {
+                geminiService.clearConversation()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.primaryOrange)
+        }
+        .padding(Constants.Design.largePadding)
     }
     
     private var statusBar: some View {
@@ -162,121 +193,122 @@ struct GeminiChatView: View {
                 .font(.system(size: 60))
                 .foregroundColor(.primaryOrange)
             
-            Text("Hey there, food lover! 🎙️")
+            Text("Hey there, food lover!")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.textPrimary)
             
-            Text("I'm your voice-activated Pantry Pal! Hold the mic button to talk with me about food, recipes, barcode scanning, and your pantry. I can also respond to text messages!")
+            Text("I'm your AI pantry assistant! 🍽️\nAsk me about recipes, ingredients, or just chat about food!")
                 .font(.body)
                 .foregroundColor(.textSecondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, Constants.Design.standardPadding)
+                .lineLimit(nil)
+            
+            VStack(spacing: Constants.Design.smallPadding) {
+                Text("Try saying:")
+                    .font(.caption)
+                    .foregroundColor(.textSecondary)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("• \"What can I cook with chicken and rice?\"")
+                    Text("• \"How long do tomatoes last?\"")
+                    Text("• \"Suggest a healthy breakfast\"")
+                }
+                .font(.caption)
+                .foregroundColor(.textSecondary)
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
+                    .fill(Color(.systemGray6))
+            )
         }
-        .padding(.vertical, Constants.Design.largePadding)
+        .padding(Constants.Design.standardPadding)
     }
     
     private var inputControlsArea: some View {
-        VStack(spacing: Constants.Design.standardPadding) {
-            Divider()
+        VStack(spacing: Constants.Design.smallPadding) {
+            // Voice button
+            voiceButton
             
-            // Voice controls
-            HStack(spacing: Constants.Design.largePadding) {
-                // Barcode scan button
-                Button(action: {
-                    showingBarcodeScanner = true
-                }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: "barcode.viewfinder")
-                            .font(.system(size: 24))
-                        Text("Scan")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.primaryOrange)
-                    .frame(width: 60, height: 60)
-                    .background(
-                        Circle()
-                            .fill(Color.primaryOrange.opacity(0.1))
-                    )
-                }
-                
-                // Voice control button
-                Button(action: {}) {
-                    Image(systemName: geminiService.isListening ? "mic.fill" : "mic")
-                        .font(.system(size: 32))
-                        .foregroundColor(.white)
-                        .frame(width: 80, height: 80)
-                        .background(
-                            Circle()
-                                .fill(geminiService.isListening ? Color.red : Color.primaryOrange)
-                                .scaleEffect(geminiService.isListening ? 1.1 : 1.0)
-                        )
-                        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-                        .animation(.easeInOut(duration: 0.2), value: geminiService.isListening)
-                }
-                .onLongPressGesture(
-                    minimumDuration: 0,
-                    maximumDistance: .infinity,
-                    perform: {},
-                    onPressingChanged: { pressing in
-                        if pressing {
-                            Task { await geminiService.startListening() }
-                        } else {
-                            geminiService.stopListening()
-                        }
-                    }
-                )
-                
-                // Stop speaking button
-                Button(action: {
-                    geminiService.stopSpeaking()
-                }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: geminiService.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 24))
-                        Text(geminiService.isSpeaking ? "Stop" : "Speaker")
-                            .font(.caption)
-                    }
-                    .foregroundColor(geminiService.isSpeaking ? .red : .textSecondary)
-                    .frame(width: 60, height: 60)
-                }
-            }
-            
-            // Text input (alternative to voice)
-            HStack(spacing: Constants.Design.smallPadding) {
-                TextField("Or type your message here...", text: $messageText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1...3)
-                    .padding(.horizontal, Constants.Design.standardPadding)
-                    .padding(.vertical, Constants.Design.smallPadding)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(Color(.systemGray6))
-                    )
-                
-                if !messageText.isEmpty {
-                    Button(action: sendTextMessage) {
-                        Image(systemName: "paperplane.fill")
-                            .foregroundColor(.primaryOrange)
-                            .font(.system(size: 20))
-                    }
-                    .disabled(geminiService.isProcessing)
-                }
-            }
-            .padding(.horizontal, Constants.Design.standardPadding)
-            .padding(.bottom, Constants.Design.smallPadding)
+            // Text input
+            textInputArea
         }
+        .padding(Constants.Design.standardPadding)
         .background(Color(.systemBackground))
     }
     
-    private func sendTextMessage() {
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        
-        let message = messageText
-        messageText = ""
-        
-        Task {
-            await geminiService.sendMessage(message)
+    private var voiceButton: some View {
+        Button {
+            if geminiService.isListening {
+                geminiService.stopListening()
+            } else {
+                geminiService.startListening()
+            }
+        } label: {
+            Image(systemName: geminiService.isListening ? "stop.circle.fill" : "mic.circle.fill")
+                .font(.system(size: 50))
+                .foregroundColor(geminiService.isListening ? .red : .primaryOrange)
+        }
+        .disabled(geminiService.isProcessing || geminiService.isSpeaking)
+        .scaleEffect(geminiService.isListening ? 1.1 : 1.0)
+        .animation(.easeInOut(duration: 0.1), value: geminiService.isListening)
+    }
+    
+    private var textInputArea: some View {
+        HStack {
+            TextField("Type a message...", text: $messageText)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .onSubmit {
+                    sendTextMessage()
+                }
+            
+            Button {
+                sendTextMessage()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.primaryOrange)
+            }
+            .disabled(messageText.trimmingCharacters(in: .whitespaces).isEmpty || geminiService.isProcessing)
         }
     }
+    
+    private func sendTextMessage() {
+        let text = messageText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        
+        messageText = ""
+        Task {
+            await geminiService.sendMessage(text)
+        }
+    }
+}
+
+// Add these extensions at the very end of the file, outside of any struct
+extension Double {
+    var isValidForUI: Bool {
+        return !isNaN && !isInfinite && isFinite
+    }
+    
+    var safeForUI: Double {
+        return isValidForUI ? self : 0.0
+    }
+}
+
+extension CGFloat {
+    var isValidForUI: Bool {
+        return !isNaN && !isInfinite && isFinite
+    }
+    
+    var safeForUI: CGFloat {
+        return isValidForUI ? self : 0.0
+    }
+}
+
+#Preview {
+    GeminiChatView()
+        .environmentObject(FatSecretService())
+        .environmentObject(FirestoreService())
+        .environmentObject(AuthenticationService())
 }

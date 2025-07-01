@@ -19,6 +19,8 @@ struct IngredientsListView: View {
     @State private var scannedBarcode: String?
     @State private var showingFatSecretSelection = false
     @State private var fatSecretFood: FatSecretFood?
+    @State private var showingEditSheet = false
+    @State private var selectedIngredient: Ingredient?
     @StateObject private var fatSecretService = FatSecretService()
     @EnvironmentObject var authenticationService: AuthenticationService
     
@@ -152,6 +154,11 @@ struct IngredientsListView: View {
                     categories: categories,
                     selectedCategory: $selectedCategory
                 )
+            }
+            .sheet(isPresented: $showingEditSheet) {
+                if let ingredient = selectedIngredient {
+                    EditIngredientView(ingredient: ingredient)
+                }
             }
             
             .alert("Move to Trash", isPresented: $showingTrashAlert) {
@@ -595,8 +602,8 @@ struct CategoryFilterSheet: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    selectedCategory = category
-                    dismiss()
+                    selectedIngredient = ingredient
+                    showingEditSheet = true
                 }
             }
             .navigationTitle("Filter by Category")

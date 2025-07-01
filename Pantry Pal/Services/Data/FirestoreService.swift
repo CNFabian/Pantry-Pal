@@ -12,30 +12,30 @@ class FirestoreService: ObservableObject {
     private let db = Firestore.firestore()
     
     func configureFirestoreForReliability() {
-           let settings = FirestoreSettings()
-           settings.isPersistenceEnabled = true
-           settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
-           db.settings = settings
-           
-           print("✅ Firestore configured for improved reliability")
-       }
-       
-       func monitorFirestoreConnection() {
-           db.collection("_connection_test").addSnapshotListener(includeMetadataChanges: true) { snapshot, error in
-               if let error = error {
-                   print("🔴 Firestore connection error: \(error)")
-                   return
-               }
-               
-               guard let snapshot = snapshot else { return }
-               
-               if snapshot.metadata.isFromCache {
-                   print("⚠️ Firestore data from cache - offline mode")
-               } else {
-                   print("✅ Firestore connected - online mode")
-               }
-           }
-       }
+        let settings = FirestoreSettings()
+        settings.isPersistenceEnabled = true
+        settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
+        db.settings = settings
+        
+        print("✅ Firestore configured for improved reliability")
+    }
+    
+    func monitorFirestoreConnection() {
+        db.collection("_connection_test").addSnapshotListener(includeMetadataChanges: true) { snapshot, error in
+            if let error = error {
+                print("🔴 Firestore connection error: \(error)")
+                return
+            }
+            
+            guard let snapshot = snapshot else { return }
+            
+            if snapshot.metadata.isFromCache {
+                print("⚠️ Firestore data from cache - offline mode")
+            } else {
+                print("✅ Firestore connected - online mode")
+            }
+        }
+    }
     
     @Published var ingredients: [Ingredient] = []
     @Published var savedRecipes: [Recipe] = []
@@ -101,12 +101,6 @@ class FirestoreService: ObservableObject {
         }
     }
     
-    func updateIngredient(_ ingredient: Ingredient) async throws {
-        guard let id = ingredient.id else { return }
-        try db.collection(Constants.Firebase.ingredients)
-            .document(id)
-            .setData(from: ingredient)
-    }
     
     func deleteIngredient(id: String) async throws {
         try await db.collection(Constants.Firebase.ingredients)
@@ -222,7 +216,7 @@ class FirestoreService: ObservableObject {
             }
         }
     }
-
+    
     func loadSavedRecipes(for userId: String) async {
         DispatchQueue.main.async {
             self.isLoadingRecipes = true
@@ -243,7 +237,7 @@ class FirestoreService: ObservableObject {
             }
         }
     }
-
+    
     func loadNotifications(for userId: String) async {
         DispatchQueue.main.async {
             self.isLoadingNotifications = true
@@ -262,13 +256,13 @@ class FirestoreService: ObservableObject {
             }
         }
     }
-
+    
     // Enhanced add ingredient that updates the local array
     func addIngredientAndRefresh(_ ingredient: Ingredient) async throws {
         try await addIngredient(ingredient)
         await loadIngredients(for: ingredient.userId)
     }
-
+    
     // Add trash functionality
     func moveToTrash(ingredientId: String, userId: String) async throws {
         try await db.collection(Constants.Firebase.ingredients)
@@ -282,7 +276,7 @@ class FirestoreService: ObservableObject {
         // Refresh the ingredients list
         await loadIngredients(for: userId)
     }
-
+    
     // Add restore from trash functionality
     func restoreFromTrash(ingredientId: String, userId: String) async throws {
         try await db.collection(Constants.Firebase.ingredients)
@@ -295,7 +289,7 @@ class FirestoreService: ObservableObject {
         
         await loadIngredients(for: userId)
     }
-
+    
     // Add method to get trashed ingredients
     func fetchTrashedIngredients(for userId: String) async throws -> [Ingredient] {
         let snapshot = try await db.collection(Constants.Firebase.ingredients)
@@ -306,6 +300,67 @@ class FirestoreService: ObservableObject {
         
         return try snapshot.documents.compactMap { document in
             try document.data(as: Ingredient.self)
+        }
+    }
+    
+    func updateIngredient(_ ingredient: Ingredient) async throws {
+        guard let userId = authService.user?.id else {
+            throw FirestoreError.userNotAuthenticated
+        }
+        
+        let ingredientRef = db.collection("users").document(userId)
+            .collection("ingredients").document(ingredient.id)
+        
+        do {
+            var data: [String: Any] = [
+                "name": ingredient.name,
+                "quantity": ingredient.quantity,
+                "unit": ingredient.unit,
+                "category": ingredient.category,
+                "dateAdded": ingredient.dateAdded,
+                "userId": userId
+            ]
+            
+            // Only add optional fields if they exist
+            if let expirationDate = ingredient.expirationDate {
+                data["expirationDate"] = expirationDate
+            }
+            if let notes = ingredient.notes {
+                data["notes"] = notes
+            }
+            
+            try await ingredientRef.setData(data)
+            
+            // Update local ingredients array
+            if let index = ingredients.firstIndex(where: { $0.id == ingredient.id }) {
+                ingredients[index] = ingredient
+            }
+            
+            print("✅ Ingredient updated successfully")
+        } catch {
+            print("❌ Error updating ingredient: \(error)")
+            throw FirestoreError.saveFailed(error.localizedDescription)
+        }
+    }
+
+    func deleteIngredient(_ ingredientId: String) async throws {
+        guard let userId = authService.user?.id else {
+            throw FirestoreError.userNotAuthenticated
+        }
+        
+        let ingredientRef = db.collection("users").document(userId)
+            .collection("ingredients").document(ingredientId)
+        
+        do {
+            try await ingredientRef.delete()
+            
+            // Remove from local ingredients array
+            ingredients.removeAll { $0.id == ingredientId }
+            
+            print("✅ Ingredient deleted successfully")
+        } catch {
+            print("❌ Error deleting ingredient: \(error)")
+            throw FirestoreError.deleteFailed(error.localizedDescription)
         }
     }
 }

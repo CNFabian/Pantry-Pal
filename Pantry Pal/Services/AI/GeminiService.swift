@@ -61,36 +61,28 @@ class GeminiService: NSObject, ObservableObject {
         
         let systemPrompt = ModelContent(parts: [
             .text("""
-            You are Pantry Pal, a friendly and bubbly AI assistant for a pantry management app! 🥕✨
+            You are Pantry Pal, a friendly and bubbly AI assistant for a pantry management app! 
             
             Your personality:
-            - Cheerful, enthusiastic, and food-obsessed
-            - Make occasional food puns and jokes
-            - Be encouraging about cooking and food management
-            - Speak naturally and conversationally since this is voice chat
-            - Keep responses concise but engaging for voice interaction
+            - Super enthusiastic about food and cooking
+            - Always positive and encouraging
+            - Use food-related emojis and expressions
+            - Make cooking feel fun and accessible
+            - Give practical, helpful advice
             
             Your capabilities:
-            - Help users scan barcodes to add items to their pantry
-            - Discuss pantry inventory and ingredients
+            - Help users manage their pantry ingredients
             - Suggest recipes based on available ingredients
-            - Talk about food categories, expiration dates, and organization
-            - Provide cooking tips and food storage advice
-            - Share food-related fun facts
-            - Guide users through app actions like "scan that barcode!" or "add it to your pantry!"
+            - Answer cooking and food storage questions
+            - Give meal planning advice
+            - Help with grocery shopping suggestions
+            - Provide food safety information
             
-            What you CANNOT discuss:
-            - Topics unrelated to food, cooking, or pantry management
-            - Personal advice outside of food/cooking
-            - Politics, controversial topics, or inappropriate content
-            
-            When users ask about non-food topics, politely redirect them back to food and pantry management with a food joke or pun.
-            
-            Keep responses conversational and under 3 sentences for voice interaction. Be helpful, encouraging, and maintain your bubbly food-focused personality!
+            Keep responses conversational, helpful, and under 100 words when possible. Always be encouraging about cooking adventures!
             """)
         ])
         
-        model = GenerativeModel(
+        self.model = GenerativeModel(
             name: "gemini-1.5-flash",
             apiKey: apiKey,
             systemInstruction: systemPrompt
@@ -99,112 +91,165 @@ class GeminiService: NSObject, ObservableObject {
         super.init()
         
         setupChat()
-        setupSpeech()
-    }
-    
-    private func setupChat() {
-        chat = model.startChat()
-    }
-    
-    private func setupSpeech() {
+        configureAudioSession()
+        requestSpeechAuthorization()
+        
+        // Set up TTS delegate
         speechSynthesizer.delegate = self
         
-        // Request speech recognition permission
+        validateConfiguration()
+    }
+    
+    // Replace the existing requestSpeechAuthorization method
+    private func requestSpeechAuthorization() {
         SFSpeechRecognizer.requestAuthorization { authStatus in
             DispatchQueue.main.async {
                 switch authStatus {
                 case .authorized:
                     print("✅ Speech recognition authorized")
-                case .denied, .restricted, .notDetermined:
-                    print("❌ Speech recognition not authorized")
+                case .denied:
+                    print("❌ Speech recognition denied")
+                    self.connectionStatus = .error("Speech recognition denied")
+                case .restricted:
+                    print("❌ Speech recognition restricted")
+                    self.connectionStatus = .error("Speech recognition restricted")
+                case .notDetermined:
+                    print("❌ Speech recognition not determined")
+                    self.connectionStatus = .error("Speech recognition not available")
                 @unknown default:
-                    print("❌ Unknown speech recognition status")
+                    print("❌ Speech recognition unknown status")
+                    self.connectionStatus = .error("Speech recognition not available")
                 }
             }
         }
     }
     
-    // MARK: - Voice Recognition
-    func startListening() async {
-        guard !isListening else { return }
-        
-        // Stop any current speech
-        stopSpeaking()
-        
-        // Request microphone permission
-        let permissionStatus = await AVAudioApplication.requestRecordPermission()
-        guard permissionStatus else {
-            connectionStatus = .error("Microphone permission denied")
+    private func configureAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playAndRecord,
+                                       mode: .default,
+                                       options: [.defaultToSpeaker, .allowBluetooth])
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            print("✅ Audio session configured successfully")
+        } catch {
+            print("⚠️ Failed to configure audio session: \(error.localizedDescription)")
+            connectionStatus = .error("Audio setup failed")
+        }
+    }
+    
+    private func setupChat() {
+        chat = model.startChat()
+        print("✅ Chat initialized")
+    }
+    
+    private func validateConfiguration() {
+        guard let _ = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") else {
+            print("❌ ERROR: GoogleService-Info.plist not found")
+            connectionStatus = .error("Configuration file missing")
             return
         }
         
+        // Simple check to ensure model exists
+        guard chat != nil else {
+            print("❌ ERROR: Gemini model not properly initialized")
+            connectionStatus = .error("AI model initialization failed")
+            return
+        }
+        
+        print("✅ GeminiService initialized successfully")
+    }
+    
+    // MARK: - Speech Recognition
+    func startListening() {
+        guard speechRecognizer?.isAvailable == true else {
+            connectionStatus = .error("Speech recognition not available")
+            return
+        }
+        
+        // Stop any ongoing recognition
+        stopListening()
+        
         do {
-            try startSpeechRecognition()
+            // Configure audio session with error handling
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            
+            recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+            guard let recognitionRequest = recognitionRequest else {
+                connectionStatus = .error("Unable to create recognition request")
+                return
+            }
+            
+            recognitionRequest.shouldReportPartialResults = true
+            
+            let inputNode = audioEngine.inputNode
+            
+            // Check if audio engine is running and stop if needed
+            if audioEngine.isRunning {
+                audioEngine.stop()
+                inputNode.removeTap(onBus: 0)
+            }
+            
+            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            
+            // Validate recording format
+            guard recordingFormat.sampleRate > 0 && !recordingFormat.sampleRate.isNaN else {
+                connectionStatus = .error("Invalid audio format")
+                return
+            }
+            
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+                recognitionRequest.append(buffer)
+            }
+            
+            audioEngine.prepare()
+            try audioEngine.start()
+            
+            recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    
+                    if let error = error {
+                        print("⚠️ Speech recognition error: \(error.localizedDescription)")
+                        self.stopListening()
+                        self.connectionStatus = .ready
+                        return
+                    }
+                    
+                    if let result = result {
+                        self.speechRecognitionText = result.bestTranscription.formattedString
+                        
+                        if result.isFinal {
+                            let finalText = result.bestTranscription.formattedString
+                            self.stopListening()
+                            
+                            if !finalText.isEmpty {
+                                Task {
+                                    await self.sendMessage(finalText)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
             isListening = true
             connectionStatus = .listeningForSpeech
             speechRecognitionText = ""
+            
         } catch {
-            connectionStatus = .error("Failed to start listening: \(error.localizedDescription)")
+            print("⚠️ Failed to start speech recognition: \(error.localizedDescription)")
+            connectionStatus = .error("Microphone setup failed")
+            stopListening()
         }
     }
     
     func stopListening() {
-        guard isListening else { return }
-        
-        stopSpeechRecognition()
         isListening = false
+        speechRecognitionText = ""
         
-        // Process the recognized text if we have any
-        if !speechRecognitionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Task {
-                await sendMessage(speechRecognitionText)
-            }
-        }
-        
-        connectionStatus = .ready
-    }
-    
-    private func startSpeechRecognition() throws {
-        // Cancel any previous task
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        
-        // Create recognition request
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest = recognitionRequest else {
-            throw SpeechError.recognitionRequestFailed
-        }
-        
-        recognitionRequest.shouldReportPartialResults = true
-        
-        // Get the audio engine's input node
-        let inputNode = audioEngine.inputNode
-        
-        // Create recognition task
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            DispatchQueue.main.async {
-                if let result = result {
-                    self?.speechRecognitionText = result.bestTranscription.formattedString
-                }
-                
-                if error != nil || result?.isFinal == true {
-                    self?.stopSpeechRecognition()
-                }
-            }
-        }
-        
-        // Set up audio format
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            recognitionRequest.append(buffer)
-        }
-        
-        // Start audio engine
-        audioEngine.prepare()
-        try audioEngine.start()
-    }
-    
-    private func stopSpeechRecognition() {
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
@@ -215,16 +260,40 @@ class GeminiService: NSObject, ObservableObject {
     
     // MARK: - Text-to-Speech
     func speak(_ text: String) {
+        // Check if TTS is available
+        guard !text.isEmpty else { return }
+        
         stopSpeaking() // Stop any current speech
         
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.1 // Slightly faster
-        utterance.pitchMultiplier = 1.1 // Slightly higher pitch for friendliness
+        // Check if speech synthesis voices are available
+        guard !AVSpeechSynthesisVoice.speechVoices().isEmpty else {
+            print("⚠️ TTS not available, continuing without speech")
+            connectionStatus = .ready
+            return
+        }
         
-        isSpeaking = true
-        connectionStatus = .speaking
-        speechSynthesizer.speak(utterance)
+        let utterance = AVSpeechUtterance(string: text)
+        
+        // Try to get a voice, fallback to default if needed
+        if let voice = AVSpeechSynthesisVoice(language: "en-US") {
+            utterance.voice = voice
+        } else {
+            print("⚠️ en-US voice not available, using default")
+            utterance.voice = AVSpeechSynthesisVoice.speechVoices().first
+        }
+        
+        utterance.rate = Float(AVSpeechUtteranceDefaultSpeechRate * 1.1)
+        utterance.pitchMultiplier = Float(1.1)
+        
+        do {
+            isSpeaking = true
+            connectionStatus = .speaking
+            speechSynthesizer.speak(utterance)
+        } catch {
+            print("⚠️ TTS failed: \(error.localizedDescription)")
+            isSpeaking = false
+            connectionStatus = .ready
+        }
     }
     
     func stopSpeaking() {
