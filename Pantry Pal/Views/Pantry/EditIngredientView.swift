@@ -251,8 +251,15 @@ struct EditIngredientView: View {
     
     private func deleteIngredient() async {
         isLoading = true
+        
+        guard let ingredientId = ingredient.id else {
+            print("❌ Cannot delete ingredient: No ID found")
+            isLoading = false
+            return
+        }
+        
         do {
-            try await firestoreService.deleteIngredient(ingredient.id ?? <#default value#>)
+            try await firestoreService.deleteIngredient(ingredientId)
             dismiss()
         } catch {
             print("❌ Error deleting ingredient: \(error)")

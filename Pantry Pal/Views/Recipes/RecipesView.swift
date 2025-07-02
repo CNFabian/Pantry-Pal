@@ -17,11 +17,12 @@ struct RecipesView: View {
     @State private var selectedRecipe: Recipe?
     @State private var showingDeleteAlert = false
     @State private var recipeToDelete: Recipe?
+    @StateObject private var recipeService = RecipeService()
     
     private let difficultyFilters = ["All", "Easy", "Medium", "Hard"]
     
     private var filteredRecipes: [Recipe] {
-        firestoreService.savedRecipes.filter { recipe in
+        recipeService.savedRecipes.filter { recipe in
             let matchesSearch = searchText.isEmpty ||
                 recipe.name.localizedCaseInsensitiveContains(searchText) ||
                 recipe.description.localizedCaseInsensitiveContains(searchText)
@@ -49,14 +50,13 @@ struct RecipesView: View {
                 filterSection
                 
                 // Main Content
-                if firestoreService.isLoadingRecipes {
+                if recipeService.isLoading {
                     loadingState
                 } else if filteredRecipes.isEmpty {
                     emptyState
                 } else {
                     recipesList
-                }
-            }
+                }            }
             .navigationTitle("Recipes")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -232,17 +232,17 @@ struct RecipesView: View {
     }
     
     private func refreshRecipes() async {
-        guard let userId = authService.user?.id else { return }
-        await firestoreService.loadSavedRecipes(for: userId)
+        do {
+            try await recipeService.fetchSavedRecipes()
+        } catch {
+            print("Error refreshing recipes: \(error)")
+        }
     }
     
     private func removeRecipe(_ recipe: Recipe) {
-        guard let userId = authService.user?.id,
-              let recipeId = recipe.id else { return }
-        
         Task {
             do {
-                try await firestoreService.removeSavedRecipe(recipeId: recipeId, userId: userId)
+                try await recipeService.deleteRecipe(recipe)
             } catch {
                 print("Error removing recipe: \(error)")
             }

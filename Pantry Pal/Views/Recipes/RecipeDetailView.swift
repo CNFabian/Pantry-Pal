@@ -53,7 +53,7 @@ struct RecipeDetailView: View {
                     let newQuantity = max(0, userIngredient.quantity - recipeIngredient.quantity)
                     if newQuantity == 0 {
                         if let id = userIngredient.id {
-                            try? await firestoreService.deleteIngredient(id: id)
+                            try? await firestoreService.deleteIngredient(id)
                         }
                     } else {
                         let updatedIngredient = Ingredient(
