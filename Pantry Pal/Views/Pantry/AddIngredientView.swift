@@ -325,17 +325,24 @@ struct AddIngredientView: View {
                 unit: selectedUnit,
                 category: selectedCategory,
                 expirationDate: hasExpirationDate ? Timestamp(date: expirationDate) : nil,
+                dateAdded: Timestamp(date: Date()),
+                notes: notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes.trimmingCharacters(in: .whitespaces),
                 inTrash: false,
                 trashedAt: nil,
                 createdAt: Timestamp(date: Date()),
                 updatedAt: Timestamp(date: Date()),
-                userId: userId
+                userId: userId,
+                fatSecretFoodId: nil,
+                brandName: nil,
+                barcode: nil,
+                nutritionInfo: nil,
+                servingInfo: nil
             )
             
             print("🐛 DEBUG: Created ingredient object: \(ingredient)")
             
             do {
-                try await firestoreService.debugAddIngredient(ingredient)
+                try await firestoreService.addIngredient(ingredient)
                 try await firestoreService.loadIngredients(for: userId)
                 
                 await MainActor.run {

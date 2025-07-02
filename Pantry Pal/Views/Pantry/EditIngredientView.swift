@@ -4,6 +4,8 @@
 //
 
 import SwiftUI
+import Firebase
+import FirebaseFirestore
 
 struct EditIngredientView: View {
     @Environment(\.dismiss) private var dismiss
@@ -31,7 +33,8 @@ struct EditIngredientView: View {
         self._quantity = State(initialValue: String(ingredient.quantity))
         self._selectedUnit = State(initialValue: ingredient.unit)
         self._selectedCategory = State(initialValue: ingredient.category)
-        self._expirationDate = State(initialValue: ingredient.expirationDate ?? Date())
+        // Convert Timestamp to Date for the UI
+        self._expirationDate = State(initialValue: ingredient.expirationDate?.dateValue() ?? Date())
         self._notes = State(initialValue: ingredient.notes ?? "")
         self._hasExpiration = State(initialValue: ingredient.expirationDate != nil)
     }
@@ -207,6 +210,7 @@ struct EditIngredientView: View {
     
     private func saveChanges() async {
         guard let userId = authService.user?.id,
+              let ingredientId = ingredient.id,
               let quantityValue = Double(quantity.trimmingCharacters(in: .whitespaces)),
               quantityValue > 0 else {
             return
@@ -215,15 +219,24 @@ struct EditIngredientView: View {
         isLoading = true
         
         let updatedIngredient = Ingredient(
-            id: ingredient.id,
+            id: ingredientId,
             name: name.trimmingCharacters(in: .whitespaces),
             quantity: quantityValue,
             unit: selectedUnit,
             category: selectedCategory,
-            expirationDate: hasExpiration ? expirationDate : nil,
+            expirationDate: hasExpiration ? Timestamp(date: expirationDate) : nil,
             dateAdded: ingredient.dateAdded,
             notes: notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes.trimmingCharacters(in: .whitespaces),
-            userId: userId
+            inTrash: ingredient.inTrash,
+            trashedAt: ingredient.trashedAt,
+            createdAt: ingredient.createdAt,
+            updatedAt: Timestamp(date: Date()),
+            userId: userId,
+            fatSecretFoodId: ingredient.fatSecretFoodId,
+            brandName: ingredient.brandName,
+            barcode: ingredient.barcode,
+            nutritionInfo: ingredient.nutritionInfo,
+            servingInfo: ingredient.servingInfo
         )
         
         do {
@@ -238,20 +251,30 @@ struct EditIngredientView: View {
     
     private func deleteIngredient() async {
         isLoading = true
-        
         do {
-            try await firestoreService.deleteIngredient(ingredient.id)
+            try await firestoreService.deleteIngredient(ingredient.id ?? <#default value#>)
             dismiss()
         } catch {
             print("❌ Error deleting ingredient: \(error)")
         }
-        
         isLoading = false
     }
 }
 
 #Preview {
-    EditIngredientView(ingredient: Ingredient.example)
+    let sampleIngredient = Ingredient(
+        id: "sample-id",
+        name: "Sample Ingredient",
+        quantity: 2.0,
+        unit: "pieces",
+        category: "Other",
+        expirationDate: Timestamp(date: Date().addingTimeInterval(86400 * 7)), // 1 week from now
+        dateAdded: Timestamp(date: Date()),
+        notes: "Sample notes",
+        userId: "sample-user-id"
+    )
+    
+    EditIngredientView(ingredient: sampleIngredient)
         .environmentObject(AuthenticationService())
         .environmentObject(FirestoreService())
 }

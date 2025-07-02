@@ -14,6 +14,8 @@ struct Ingredient: Identifiable, Codable {
     let unit: String
     let category: String
     let expirationDate: Timestamp?
+    let dateAdded: Timestamp
+    let notes: String?
     let inTrash: Bool
     let trashedAt: Timestamp?
     let createdAt: Timestamp
@@ -31,6 +33,8 @@ struct Ingredient: Identifiable, Codable {
          unit: String,
          category: String,
          expirationDate: Timestamp? = nil,
+         dateAdded: Timestamp = Timestamp(),
+         notes: String? = nil,
          inTrash: Bool = false,
          trashedAt: Timestamp? = nil,
          createdAt: Timestamp = Timestamp(),
@@ -47,6 +51,8 @@ struct Ingredient: Identifiable, Codable {
         self.unit = unit
         self.category = category
         self.expirationDate = expirationDate
+        self.dateAdded = dateAdded
+        self.notes = notes
         self.inTrash = inTrash
         self.trashedAt = trashedAt
         self.createdAt = createdAt
@@ -79,4 +85,19 @@ struct Ingredient: Identifiable, Codable {
             return String(format: "%.1f", quantity)
         }
     }
+}
+
+// MARK: - Ingredient Extension
+extension Ingredient {
+    static let example = Ingredient(
+        id: "example-id",
+        name: "Example Ingredient",
+        quantity: 1.0,
+        unit: "piece",
+        category: "Other",
+        expirationDate: Timestamp(date: Date().addingTimeInterval(86400 * 7)), // 1 week from now
+        dateAdded: Timestamp(date: Date()),
+        notes: "Example notes",
+        userId: "example-user-id"
+    )
 }

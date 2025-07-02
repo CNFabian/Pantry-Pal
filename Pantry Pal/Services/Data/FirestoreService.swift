@@ -8,308 +8,196 @@ import Firebase
 import FirebaseFirestore
 import Combine
 
-class FirestoreService: ObservableObject {
-    private let db = Firestore.firestore()
+// MARK: - FirestoreError enum
+enum FirestoreError: Error {
+    case userNotAuthenticated
+    case saveFailed(String)
+    case deleteFailed(String)
+    case loadFailed(String)
     
-    func configureFirestoreForReliability() {
+    var localizedDescription: String {
+        switch self {
+        case .userNotAuthenticated:
+            return "User not authenticated"
+        case .saveFailed(let message):
+            return "Save failed: \(message)"
+        case .deleteFailed(let message):
+            return "Delete failed: \(message)"
+        case .loadFailed(let message):
+            return "Load failed: \(message)"
+        }
+    }
+}
+
+class FirestoreService: ObservableObject {
+    @Published var ingredients: [Ingredient] = []
+    @Published var recipes: [Recipe] = []
+    @Published var notifications: [NotificationEntry] = []
+    @Published var historyEntries: [HistoryEntry] = []
+    @Published var isLoading = false
+    @Published var errorMessage = ""
+    
+    private let db = Firestore.firestore()
+    private var ingredientsListener: ListenerRegistration?
+    private var recipesListener: ListenerRegistration?
+    private var notificationsListener: ListenerRegistration?
+    private var historyListener: ListenerRegistration?
+    private var authService: AuthenticationService?
+    
+    init() {
+        configureFirestore()
+    }
+    
+    deinit {
+        removeAllListeners()
+    }
+    
+    // MARK: - AuthService Dependency Injection
+    func setAuthService(_ authService: AuthenticationService) {
+        self.authService = authService
+    }
+    
+    // MARK: - Firestore Configuration
+    private func configureFirestore() {
         let settings = FirestoreSettings()
         settings.isPersistenceEnabled = true
         settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
         db.settings = settings
-        
-        print("✅ Firestore configured for improved reliability")
+    }
+    
+    func configureFirestoreForReliability() {
+        let settings = FirestoreSettings()
+        settings.isPersistenceEnabled = true
+        settings.cacheSizeBytes = 100 * 1024 * 1024 // 100 MB cache
+        db.settings = settings
+        print("✅ Firestore configured for offline persistence")
     }
     
     func monitorFirestoreConnection() {
-        db.collection("_connection_test").addSnapshotListener(includeMetadataChanges: true) { snapshot, error in
+        db.enableNetwork { error in
             if let error = error {
-                print("🔴 Firestore connection error: \(error)")
-                return
-            }
-            
-            guard let snapshot = snapshot else { return }
-            
-            if snapshot.metadata.isFromCache {
-                print("⚠️ Firestore data from cache - offline mode")
+                print("❌ Firestore network error: \(error)")
             } else {
-                print("✅ Firestore connected - online mode")
+                print("✅ Firestore network enabled")
             }
         }
     }
     
-    @Published var ingredients: [Ingredient] = []
-    @Published var savedRecipes: [Recipe] = []
-    @Published var notifications: [NotificationEntry] = []
-    @Published var isLoadingIngredients = false
-    @Published var isLoadingRecipes = false
-    @Published var isLoadingNotifications = false
+    // MARK: - Listener Management
+    private func removeAllListeners() {
+        ingredientsListener?.remove()
+        recipesListener?.remove()
+        notificationsListener?.remove()
+        historyListener?.remove()
+    }
     
     // MARK: - Ingredient Operations
-    func fetchIngredients(for userId: String) async throws -> [Ingredient] {
-        print("🐛 DEBUG: fetchIngredients called for user: \(userId)")
+    func loadIngredients(for userId: String) async {
+        print("🔄 Loading ingredients for user: \(userId)")
         
-        let snapshot = try await db.collection(Constants.Firebase.ingredients)
-            .whereField("userId", isEqualTo: userId)
-            .whereField("inTrash", isEqualTo: false)
-            .order(by: "name")
-            .getDocuments()
-        
-        print("🐛 DEBUG: Firestore query returned \(snapshot.documents.count) documents")
-        
-        let ingredients = try snapshot.documents.compactMap { document in
-            print("🐛 DEBUG: Processing document: \(document.documentID)")
-            print("🐛 DEBUG: Document data: \(document.data())")
-            return try document.data(as: Ingredient.self)
+        DispatchQueue.main.async {
+            self.isLoading = true
         }
         
-        print("🐛 DEBUG: Successfully parsed \(ingredients.count) ingredients")
-        return ingredients
+        do {
+            let snapshot = try await db.collection("users")
+                .document(userId)
+                .collection("ingredients")
+                .whereField("inTrash", isEqualTo: false)
+                .order(by: "createdAt", descending: true)
+                .getDocuments()
+            
+            let loadedIngredients = try snapshot.documents.compactMap { document in
+                try document.data(as: Ingredient.self)
+            }
+            
+            DispatchQueue.main.async {
+                self.ingredients = loadedIngredients
+                self.isLoading = false
+            }
+            
+            print("✅ Loaded \(loadedIngredients.count) ingredients")
+        } catch {
+            print("❌ Error loading ingredients: \(error)")
+            DispatchQueue.main.async {
+                self.errorMessage = "Failed to load ingredients"
+                self.isLoading = false
+            }
+        }
+    }
+    
+    func startIngredientsListener(for userId: String) {
+        print("👂 Starting ingredients listener for user: \(userId)")
+        
+        ingredientsListener?.remove()
+        
+        ingredientsListener = db.collection("users")
+            .document(userId)
+            .collection("ingredients")
+            .whereField("inTrash", isEqualTo: false)
+            .order(by: "createdAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                
+                if let error = error {
+                    print("❌ Ingredients listener error: \(error)")
+                    DispatchQueue.main.async {
+                        self.errorMessage = "Failed to sync ingredients"
+                    }
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    print("⚠️ No ingredients documents found")
+                    return
+                }
+                
+                do {
+                    let ingredients = try documents.compactMap { document in
+                        try document.data(as: Ingredient.self)
+                    }
+                    
+                    DispatchQueue.main.async {
+                        self.ingredients = ingredients
+                        print("✅ Ingredients updated via listener: \(ingredients.count) items")
+                    }
+                } catch {
+                    print("❌ Error parsing ingredients: \(error)")
+                }
+            }
     }
     
     func addIngredient(_ ingredient: Ingredient) async throws {
-        let docRef = db.collection(Constants.Firebase.ingredients).document()
-        var ingredientToSave = ingredient
-        ingredientToSave.id = docRef.documentID
-        
-        try docRef.setData(from: ingredientToSave)
-    }
-    
-    // Add this method to FirestoreService class
-    func debugAddIngredient(_ ingredient: Ingredient) async throws {
-        print("🐛 DEBUG: Starting addIngredient")
-        print("🐛 DEBUG: Ingredient data: \(ingredient)")
-        print("🐛 DEBUG: User ID: \(ingredient.userId)")
-        
-        // Check if Firestore is configured
-        print("🐛 DEBUG: Firestore instance: \(db)")
-        
-        let docRef = db.collection(Constants.Firebase.ingredients).document()
-        print("🐛 DEBUG: Document reference created: \(docRef.documentID)")
-        
-        var ingredientToSave = ingredient
-        ingredientToSave.id = docRef.documentID
-        
-        print("🐛 DEBUG: About to save ingredient with ID: \(docRef.documentID)")
-        
-        do {
-            try docRef.setData(from: ingredientToSave)
-            print("🐛 DEBUG: Successfully saved ingredient")
-        } catch {
-            print("🐛 DEBUG: Failed to save ingredient: \(error)")
-            print("🐛 DEBUG: Error details: \(error.localizedDescription)")
-            throw error
-        }
-    }
-    
-    
-    func deleteIngredient(id: String) async throws {
-        try await db.collection(Constants.Firebase.ingredients)
-            .document(id)
-            .delete()
-    }
-    
-    func saveGeneratedRecipe(_ recipe: Recipe, for userId: String) async throws {
-        let docRef = db.collection(Constants.Firebase.savedRecipes).document()
-        
-        var recipeToSave = recipe
-        recipeToSave.userId = userId
-        recipeToSave.savedAt = Timestamp()
-        recipeToSave.id = docRef.documentID
-        
-        try docRef.setData(from: recipeToSave)
-        
-        await loadSavedRecipes(for: userId)
-    }
-    
-    // MARK: - Recipe Operations
-    func fetchSavedRecipes(for userId: String) async throws -> [Recipe] {
-        let snapshot = try await db.collection(Constants.Firebase.savedRecipes)
-            .whereField("userId", isEqualTo: userId)
-            .order(by: "savedAt", descending: true)
-            .getDocuments()
-        
-        return try snapshot.documents.compactMap { document in
-            try document.data(as: Recipe.self)
-        }
-    }
-    
-    func saveRecipe(_ recipe: Recipe) async throws {
-        let docRef = db.collection(Constants.Firebase.savedRecipes).document()
-        var recipeToSave = recipe
-        recipeToSave.id = docRef.documentID
-        
-        try docRef.setData(from: recipeToSave)
-    }
-    
-    func removeSavedRecipe(recipeId: String, userId: String) async throws {
-        try await db.collection(Constants.Firebase.savedRecipes)
-            .document(recipeId)
-            .delete()
-        
-        // Refresh the saved recipes list
-        await loadSavedRecipes(for: userId)
-    }
-    
-    // MARK: - History Operations
-    func addHistoryEntry(_ entry: HistoryEntry) async throws {
-        let docRef = db.collection(Constants.Firebase.history).document()
-        var entryToSave = entry
-        entryToSave.id = docRef.documentID
-        
-        try docRef.setData(from: entryToSave)
-    }
-    
-    func fetchHistory(for userId: String, limit: Int = 50) async throws -> [HistoryEntry] {
-        let snapshot = try await db.collection(Constants.Firebase.history)
-            .whereField("userId", isEqualTo: userId)
-            .order(by: "timestamp", descending: true)
-            .limit(to: limit)
-            .getDocuments()
-        
-        return try snapshot.documents.compactMap { document in
-            try document.data(as: HistoryEntry.self)
-        }
-    }
-    
-    // MARK: - Notification Operations
-    func fetchNotifications(for userId: String, limit: Int = 20) async throws -> [NotificationEntry] {
-        let snapshot = try await db.collection(Constants.Firebase.notifications)
-            .whereField("userId", isEqualTo: userId)
-            .order(by: "createdAt", descending: true)
-            .limit(to: limit)
-            .getDocuments()
-        
-        return try snapshot.documents.compactMap { document in
-            try document.data(as: NotificationEntry.self)
-        }
-    }
-    
-    func markNotificationAsRead(id: String) async throws {
-        try await db.collection(Constants.Firebase.notifications)
-            .document(id)
-            .updateData([
-                "read": true,
-                "readAt": Timestamp()
-            ])
-    }
-    
-    func loadIngredients(for userId: String) async {
-        print("🐛 DEBUG: FirestoreService.loadIngredients called for user: \(userId)")
-        
-        DispatchQueue.main.async {
-            self.isLoadingIngredients = true
-        }
-        
-        do {
-            let fetchedIngredients = try await fetchIngredients(for: userId)
-            print("🐛 DEBUG: Fetched \(fetchedIngredients.count) ingredients from Firestore")
-            
-            DispatchQueue.main.async {
-                self.ingredients = fetchedIngredients
-                self.isLoadingIngredients = false
-                print("🐛 DEBUG: Updated ingredients array. New count: \(self.ingredients.count)")
-            }
-        } catch {
-            print("🐛 DEBUG: Error loading ingredients: \(error)")
-            DispatchQueue.main.async {
-                self.isLoadingIngredients = false
-            }
-        }
-    }
-    
-    func loadSavedRecipes(for userId: String) async {
-        DispatchQueue.main.async {
-            self.isLoadingRecipes = true
-        }
-        
-        do {
-            let fetchedRecipes = try await fetchSavedRecipes(for: userId)
-            DispatchQueue.main.async {
-                // Clear the array first to prevent duplicates
-                self.savedRecipes.removeAll()
-                self.savedRecipes = fetchedRecipes
-                self.isLoadingRecipes = false
-            }
-        } catch {
-            print("Error loading recipes: \(error)")
-            DispatchQueue.main.async {
-                self.isLoadingRecipes = false
-            }
-        }
-    }
-    
-    func loadNotifications(for userId: String) async {
-        DispatchQueue.main.async {
-            self.isLoadingNotifications = true
-        }
-        
-        do {
-            let fetchedNotifications = try await fetchNotifications(for: userId)
-            DispatchQueue.main.async {
-                self.notifications = fetchedNotifications
-                self.isLoadingNotifications = false
-            }
-        } catch {
-            print("Error loading notifications: \(error)")
-            DispatchQueue.main.async {
-                self.isLoadingNotifications = false
-            }
-        }
-    }
-    
-    // Enhanced add ingredient that updates the local array
-    func addIngredientAndRefresh(_ ingredient: Ingredient) async throws {
-        try await addIngredient(ingredient)
-        await loadIngredients(for: ingredient.userId)
-    }
-    
-    // Add trash functionality
-    func moveToTrash(ingredientId: String, userId: String) async throws {
-        try await db.collection(Constants.Firebase.ingredients)
-            .document(ingredientId)
-            .updateData([
-                "inTrash": true,
-                "trashedAt": Timestamp(date: Date()),
-                "updatedAt": Timestamp(date: Date())
-            ])
-        
-        // Refresh the ingredients list
-        await loadIngredients(for: userId)
-    }
-    
-    // Add restore from trash functionality
-    func restoreFromTrash(ingredientId: String, userId: String) async throws {
-        try await db.collection(Constants.Firebase.ingredients)
-            .document(ingredientId)
-            .updateData([
-                "inTrash": false,
-                "trashedAt": FieldValue.delete(),
-                "updatedAt": Timestamp(date: Date())
-            ])
-        
-        await loadIngredients(for: userId)
-    }
-    
-    // Add method to get trashed ingredients
-    func fetchTrashedIngredients(for userId: String) async throws -> [Ingredient] {
-        let snapshot = try await db.collection(Constants.Firebase.ingredients)
-            .whereField("userId", isEqualTo: userId)
-            .whereField("inTrash", isEqualTo: true)
-            .order(by: "trashedAt", descending: true)
-            .getDocuments()
-        
-        return try snapshot.documents.compactMap { document in
-            try document.data(as: Ingredient.self)
-        }
-    }
-    
-    func updateIngredient(_ ingredient: Ingredient) async throws {
-        guard let userId = authService.user?.id else {
+        guard let userId = authService?.user?.id else {
             throw FirestoreError.userNotAuthenticated
         }
         
         let ingredientRef = db.collection("users").document(userId)
-            .collection("ingredients").document(ingredient.id)
+            .collection("ingredients").document()
+        
+        var ingredientWithId = ingredient
+        ingredientWithId.id = ingredientRef.documentID
+        
+        do {
+            try ingredientRef.setData(from: ingredientWithId)
+            print("✅ Ingredient added successfully")
+        } catch {
+            print("❌ Error adding ingredient: \(error)")
+            throw FirestoreError.saveFailed(error.localizedDescription)
+        }
+    }
+    
+    func updateIngredient(_ ingredient: Ingredient) async throws {
+        guard let userId = authService?.user?.id else {
+            throw FirestoreError.userNotAuthenticated
+        }
+        
+        guard let ingredientId = ingredient.id else {
+            throw FirestoreError.saveFailed("Invalid ingredient ID")
+        }
+        
+        let ingredientRef = db.collection("users").document(userId)
+            .collection("ingredients").document(ingredientId)
         
         do {
             var data: [String: Any] = [
@@ -344,7 +232,7 @@ class FirestoreService: ObservableObject {
     }
 
     func deleteIngredient(_ ingredientId: String) async throws {
-        guard let userId = authService.user?.id else {
+        guard let userId = authService?.user?.id else {
             throw FirestoreError.userNotAuthenticated
         }
         
@@ -361,6 +249,235 @@ class FirestoreService: ObservableObject {
         } catch {
             print("❌ Error deleting ingredient: \(error)")
             throw FirestoreError.deleteFailed(error.localizedDescription)
+        }
+    }
+    
+    // MARK: - Trash Operations
+    func moveToTrash(ingredientId: String, userId: String) async throws {
+        try await db.collection(Constants.Firebase.ingredients)
+            .document(ingredientId)
+            .updateData([
+                "inTrash": true,
+                "trashedAt": Timestamp(date: Date()),
+                "updatedAt": Timestamp(date: Date())
+            ])
+        
+        // Refresh the ingredients list
+        await loadIngredients(for: userId)
+    }
+    
+    func restoreFromTrash(ingredientId: String, userId: String) async throws {
+        try await db.collection(Constants.Firebase.ingredients)
+            .document(ingredientId)
+            .updateData([
+                "inTrash": false,
+                "trashedAt": FieldValue.delete(),
+                "updatedAt": Timestamp(date: Date())
+            ])
+        
+        await loadIngredients(for: userId)
+    }
+    
+    func fetchTrashedIngredients(for userId: String) async throws -> [Ingredient] {
+        let snapshot = try await db.collection(Constants.Firebase.ingredients)
+            .whereField("userId", isEqualTo: userId)
+            .whereField("inTrash", isEqualTo: true)
+            .order(by: "trashedAt", descending: true)
+            .getDocuments()
+        
+        return try snapshot.documents.compactMap { document in
+            try document.data(as: Ingredient.self)
+        }
+    }
+    
+    // MARK: - Recipe Operations
+    func loadRecipes(for userId: String) async {
+        print("🔄 Loading recipes for user: \(userId)")
+        
+        DispatchQueue.main.async {
+            self.isLoading = true
+        }
+        
+        do {
+            let snapshot = try await db.collection("users")
+                .document(userId)
+                .collection("recipes")
+                .order(by: "savedAt", descending: true)
+                .getDocuments()
+            
+            let loadedRecipes = try snapshot.documents.compactMap { document in
+                try document.data(as: Recipe.self)
+            }
+            
+            DispatchQueue.main.async {
+                self.recipes = loadedRecipes
+                self.isLoading = false
+            }
+            
+            print("✅ Loaded \(loadedRecipes.count) recipes")
+        } catch {
+            print("❌ Error loading recipes: \(error)")
+            DispatchQueue.main.async {
+                self.errorMessage = "Failed to load recipes"
+                self.isLoading = false
+            }
+        }
+    }
+    
+    func saveRecipe(_ recipe: Recipe, for userId: String) async throws {
+        let recipeRef = db.collection("users").document(userId)
+            .collection("recipes").document()
+        
+        var recipeWithId = recipe
+        recipeWithId.id = recipeRef.documentID
+        recipeWithId.userId = userId
+        recipeWithId.savedAt = Timestamp()
+        
+        do {
+            try recipeRef.setData(from: recipeWithId)
+            print("✅ Recipe saved successfully")
+        } catch {
+            print("❌ Error saving recipe: \(error)")
+            throw FirestoreError.saveFailed(error.localizedDescription)
+        }
+    }
+    
+    func deleteRecipe(_ recipeId: String, for userId: String) async throws {
+        let recipeRef = db.collection("users").document(userId)
+            .collection("recipes").document(recipeId)
+        
+        do {
+            try await recipeRef.delete()
+            
+            // Remove from local recipes array
+            recipes.removeAll { $0.id == recipeId }
+            
+            print("✅ Recipe deleted successfully")
+        } catch {
+            print("❌ Error deleting recipe: \(error)")
+            throw FirestoreError.deleteFailed(error.localizedDescription)
+        }
+    }
+    
+    // MARK: - Notification Operations
+    func loadNotifications(for userId: String) async {
+        print("🔄 Loading notifications for user: \(userId)")
+        
+        do {
+            let snapshot = try await db.collection("users")
+                .document(userId)
+                .collection("notifications")
+                .order(by: "createdAt", descending: true)
+                .limit(to: 50)
+                .getDocuments()
+            
+            let loadedNotifications = try snapshot.documents.compactMap { document in
+                try document.data(as: NotificationEntry.self)
+            }
+            
+            DispatchQueue.main.async {
+                self.notifications = loadedNotifications
+            }
+            
+            print("✅ Loaded \(loadedNotifications.count) notifications")
+        } catch {
+            print("❌ Error loading notifications: \(error)")
+        }
+    }
+    
+    func markNotificationAsRead(_ notificationId: String, for userId: String) async throws {
+        let notificationRef = db.collection("users").document(userId)
+            .collection("notifications").document(notificationId)
+        
+        try await notificationRef.updateData([
+            "read": true,
+            "readAt": Timestamp()
+        ])
+        
+        // Update local notification
+        if let index = notifications.firstIndex(where: { $0.id == notificationId }) {
+            // Note: Since NotificationEntry properties are let constants, we'd need to recreate
+            // or mark this for refresh from server
+            await loadNotifications(for: userId)
+        }
+    }
+    
+    // MARK: - History Operations
+    func loadHistory(for userId: String) async {
+        print("🔄 Loading history for user: \(userId)")
+        
+        do {
+            let snapshot = try await db.collection("users")
+                .document(userId)
+                .collection("history")
+                .order(by: "timestamp", descending: true)
+                .limit(to: 100)
+                .getDocuments()
+            
+            let loadedHistory = try snapshot.documents.compactMap { document in
+                try document.data(as: HistoryEntry.self)
+            }
+            
+            DispatchQueue.main.async {
+                self.historyEntries = loadedHistory
+            }
+            
+            print("✅ Loaded \(loadedHistory.count) history entries")
+        } catch {
+            print("❌ Error loading history: \(error)")
+        }
+    }
+    
+    func addHistoryEntry(type: String, action: String, description: String, details: [String: Any]?, for userId: String) async {
+        let historyRef = db.collection("users").document(userId)
+            .collection("history").document()
+        
+        let historyEntry = HistoryEntry(
+            id: historyRef.documentID,
+            type: type,
+            action: action,
+            description: description,
+            timestamp: Timestamp(),
+            userId: userId,
+            details: details?.mapValues { AnyCodable($0) }
+        )
+        
+        do {
+            try historyRef.setData(from: historyEntry)
+            print("✅ History entry added successfully")
+        } catch {
+            print("❌ Error adding history entry: \(error)")
+        }
+    }
+    
+    // MARK: - Utility Methods
+    func clearCache() {
+        db.clearPersistence { error in
+            if let error = error {
+                print("❌ Error clearing Firestore cache: \(error)")
+            } else {
+                print("✅ Firestore cache cleared")
+            }
+        }
+    }
+    
+    func enableOfflineMode() {
+        db.disableNetwork { error in
+            if let error = error {
+                print("❌ Error enabling offline mode: \(error)")
+            } else {
+                print("✅ Offline mode enabled")
+            }
+        }
+    }
+    
+    func enableOnlineMode() {
+        db.enableNetwork { error in
+            if let error = error {
+                print("❌ Error enabling online mode: \(error)")
+            } else {
+                print("✅ Online mode enabled")
+            }
         }
     }
 }

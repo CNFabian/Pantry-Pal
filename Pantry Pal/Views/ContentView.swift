@@ -134,7 +134,7 @@ struct MainTabView: View {
         
         Task {
             await firestoreService.loadIngredients(for: userId)
-            await firestoreService.loadSavedRecipes(for: userId)
+            await firestoreService.loadRecipes(for: userId)
             await firestoreService.loadNotifications(for: userId)
         }
     }

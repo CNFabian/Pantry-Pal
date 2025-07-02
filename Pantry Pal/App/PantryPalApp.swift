@@ -24,6 +24,9 @@ struct Pantry_PalApp: App {
         
         firestoreService.configureFirestoreForReliability()
         firestoreService.monitorFirestoreConnection()
+        
+        // Set the authService reference
+        firestoreService.setAuthService(authService)
     }
     
     var body: some Scene {
