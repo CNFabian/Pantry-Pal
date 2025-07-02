@@ -101,3 +101,58 @@ extension Ingredient {
         userId: "example-user-id"
     )
 }
+
+extension Ingredient {
+    // Computed property to ensure quantity is always valid
+    var safeQuantity: Double {
+        if quantity.isNaN || quantity.isInfinite || !quantity.isFinite {
+            return 0.0
+        }
+        return max(0, quantity) // Ensure non-negative
+    }
+    
+    // Method to create ingredient with validated quantity
+    static func createSafe(
+        id: String? = nil,
+        name: String,
+        quantity: Double,
+        unit: String,
+        category: String,
+        expirationDate: Timestamp? = nil,
+        dateAdded: Timestamp? = nil,
+        notes: String? = nil,
+        inTrash: Bool = false,
+        trashedAt: Timestamp? = nil,
+        createdAt: Timestamp? = nil,
+        updatedAt: Timestamp? = nil,
+        userId: String,
+        fatSecretFoodId: String? = nil,
+        brandName: String? = nil,
+        barcode: String? = nil,
+        nutritionInfo: NutritionInfo? = nil,
+        servingInfo: ServingInfo? = nil
+    ) -> Ingredient {
+        let safeQuantity = quantity.isFinite && !quantity.isNaN && !quantity.isInfinite ? max(0, quantity) : 0.0
+        
+        return Ingredient(
+            id: id,
+            name: name,
+            quantity: safeQuantity,
+            unit: unit,
+            category: category,
+            expirationDate: expirationDate,
+            dateAdded: dateAdded ?? Timestamp(date: Date()),
+            notes: notes,
+            inTrash: inTrash,
+            trashedAt: trashedAt,
+            createdAt: createdAt ?? Timestamp(date: Date()),
+            updatedAt: updatedAt ?? Timestamp(date: Date()),
+            userId: userId,
+            fatSecretFoodId: fatSecretFoodId,
+            brandName: brandName,
+            barcode: barcode,
+            nutritionInfo: nutritionInfo,
+            servingInfo: servingInfo
+        )
+    }
+}

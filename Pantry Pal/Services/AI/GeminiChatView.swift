@@ -67,7 +67,11 @@ struct GeminiChatView: View {
                     scannedBarcode = nil
                 }
             }
+            .onAppear {
+                geminiService.configure(firestoreService: firestoreService, authService: authService)
+            } 
         }
+        
     }
     
     private var errorStateView: some View {

@@ -7,6 +7,7 @@ import Foundation
 import GoogleGenerativeAI
 import AVFoundation
 import Speech
+import FirebaseFirestore
 
 @MainActor
 class GeminiService: NSObject, ObservableObject {
@@ -29,6 +30,15 @@ class GeminiService: NSObject, ObservableObject {
     @Published var conversationHistory: [ChatMessage] = []
     @Published var connectionStatus: ConnectionStatus = .ready
     @Published var speechRecognitionText = ""
+    @Published var pendingPantryAction: PantryAction?
+    weak var firestoreService: FirestoreService?
+    weak var authService: AuthenticationService?
+    enum PantryAction {
+        case addIngredient(name: String, quantity: Double, unit: String, category: String)
+        case editIngredient(id: String, name: String, quantity: Double, unit: String, category: String)
+        case deleteIngredient(id: String)
+        case updateQuantity(id: String, newQuantity: Double)
+    }
     
     enum ConnectionStatus: Equatable {
         case ready
@@ -71,14 +81,34 @@ class GeminiService: NSObject, ObservableObject {
             - Give practical, helpful advice
             
             Your capabilities:
-            - Help users manage their pantry ingredients
+            - Help users manage their pantry ingredients (ADD, EDIT, DELETE, UPDATE)
             - Suggest recipes based on available ingredients
             - Answer cooking and food storage questions
             - Give meal planning advice
             - Help with grocery shopping suggestions
             - Provide food safety information
             
-            Keep responses conversational, helpful, and under 100 words when possible. Always be encouraging about cooking adventures!
+            PANTRY MANAGEMENT:
+            When users want to manage their pantry, respond with valid JSON followed by a friendly message.
+            
+            JSON Format (use ONLY these exact fields with valid numbers):
+            {
+                "action": "add_ingredient",
+                "name": "ingredient_name",
+                "quantity": 2.0,
+                "unit": "cups",
+                "category": "Grains"
+            }
+            
+            Valid actions: "add_ingredient", "edit_ingredient", "delete_ingredient", "update_quantity"
+            Valid categories: "Produce", "Dairy", "Meat", "Grains", "Spices", "Condiments", "Other"
+            
+            IMPORTANT: 
+            - Always use valid numbers for quantity (never NaN, infinity, or text)
+            - Include both JSON and a friendly response
+            - If unsure about details, ask the user for clarification
+            
+            Keep responses conversational, helpful, and under 100 words when possible.
             """)
         ])
         
@@ -98,6 +128,283 @@ class GeminiService: NSObject, ObservableObject {
         speechSynthesizer.delegate = self
         
         validateConfiguration()
+    }
+    
+    func configure(firestoreService: FirestoreService, authService: AuthenticationService) {
+        self.firestoreService = firestoreService
+        self.authService = authService
+    }
+
+    // Add pantry management functions
+    func handlePantryRequest(_ message: String) async {
+        // Enhance the system prompt to include pantry management capabilities
+        let pantryPrompt = """
+        \(message)
+        
+        If the user wants to add, edit, delete, or update ingredients in their pantry, respond with a JSON action in this format:
+        {
+            "action": "add_ingredient" | "edit_ingredient" | "delete_ingredient" | "update_quantity",
+            "ingredient_id": "id_if_editing_or_deleting",
+            "name": "ingredient_name",
+            "quantity": number,
+            "unit": "unit_string",
+            "category": "category_string"
+        }
+        
+        If it's a general food question, respond normally with friendly advice.
+        """
+        
+        do {
+            let response = try await chat?.sendMessage(pantryPrompt)
+            if let responseText = response?.text {
+                // Check if response contains a JSON action
+                if let action = parseActionFromResponse(responseText) {
+                    await executePantryAction(action)
+                } else {
+                    // Regular chat response
+                    currentResponse = responseText
+                    let aiMessage = ChatMessage(text: responseText, isUser: false, timestamp: Date())
+                    conversationHistory.append(aiMessage)
+                    speak(responseText)
+                }
+            }
+        } catch {
+            let errorMessage = "I had trouble with that pantry request. Could you try again?"
+            let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+            conversationHistory.append(aiMessage)
+            speak(errorMessage)
+        }
+    }
+
+    private func parseActionFromResponse(_ response: String) -> PantryAction? {
+        // Look for JSON in the response - handle both pure JSON and JSON within text
+        let jsonPattern = #"\{[\s\S]*?\}"#
+        guard let regex = try? NSRegularExpression(pattern: jsonPattern),
+              let match = regex.firstMatch(in: response, range: NSRange(response.startIndex..., in: response)),
+              let range = Range(match.range, in: response) else {
+            return nil
+        }
+        
+        let jsonString = String(response[range])
+        
+        guard let jsonData = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let actionType = json["action"] as? String else {
+            return nil
+        }
+        
+        switch actionType {
+        case "add_ingredient":
+            guard let name = json["name"] as? String,
+                  let quantityValue = json["quantity"],
+                  let unit = json["unit"] as? String,
+                  let category = json["category"] as? String else { return nil }
+            
+            // Safely convert quantity to Double
+            let quantity: Double
+            if let doubleValue = quantityValue as? Double, doubleValue.isFinite {
+                quantity = doubleValue
+            } else if let intValue = quantityValue as? Int {
+                quantity = Double(intValue)
+            } else if let stringValue = quantityValue as? String,
+                      let parsedValue = Double(stringValue), parsedValue.isFinite {
+                quantity = parsedValue
+            } else {
+                return nil // Invalid quantity
+            }
+            
+            return .addIngredient(name: name, quantity: quantity, unit: unit, category: category)
+            
+        case "edit_ingredient":
+            guard let id = json["ingredient_id"] as? String,
+                  let name = json["name"] as? String,
+                  let quantityValue = json["quantity"],
+                  let unit = json["unit"] as? String,
+                  let category = json["category"] as? String else { return nil }
+            
+            // Safely convert quantity to Double
+            let quantity: Double
+            if let doubleValue = quantityValue as? Double, doubleValue.isFinite {
+                quantity = doubleValue
+            } else if let intValue = quantityValue as? Int {
+                quantity = Double(intValue)
+            } else if let stringValue = quantityValue as? String,
+                      let parsedValue = Double(stringValue), parsedValue.isFinite {
+                quantity = parsedValue
+            } else {
+                return nil // Invalid quantity
+            }
+            
+            return .editIngredient(id: id, name: name, quantity: quantity, unit: unit, category: category)
+            
+        case "delete_ingredient":
+            guard let id = json["ingredient_id"] as? String else { return nil }
+            return .deleteIngredient(id: id)
+            
+        case "update_quantity":
+            guard let id = json["ingredient_id"] as? String,
+                  let quantityValue = json["quantity"] else { return nil }
+            
+            // Safely convert quantity to Double
+            let quantity: Double
+            if let doubleValue = quantityValue as? Double, doubleValue.isFinite {
+                quantity = doubleValue
+            } else if let intValue = quantityValue as? Int {
+                quantity = Double(intValue)
+            } else if let stringValue = quantityValue as? String,
+                      let parsedValue = Double(stringValue), parsedValue.isFinite {
+                quantity = parsedValue
+            } else {
+                return nil // Invalid quantity
+            }
+            
+            return .updateQuantity(id: id, newQuantity: quantity)
+            
+        default:
+            return nil
+        }
+    }
+
+    private func executePantryAction(_ action: PantryAction) async {
+        guard let firestoreService = firestoreService,
+              let authService = authService,
+              let userId = authService.user?.id else {
+            let errorMessage = "I can't access your pantry right now. Please make sure you're logged in!"
+            let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+            conversationHistory.append(aiMessage)
+            speak(errorMessage)
+            return
+        }
+        
+        do {
+            switch action {
+            case .addIngredient(let name, let quantity, let unit, let category):
+                // Validate inputs
+                guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
+                      quantity > 0 && quantity.isFinite,
+                      !unit.trimmingCharacters(in: .whitespaces).isEmpty else {
+                    let errorMessage = "Sorry, I need valid ingredient details to add to your pantry!"
+                    let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+                    conversationHistory.append(aiMessage)
+                    speak(errorMessage)
+                    return
+                }
+                
+                let ingredient = Ingredient.createSafe(
+                    name: name.trimmingCharacters(in: .whitespaces),
+                    quantity: quantity,
+                    unit: unit.trimmingCharacters(in: .whitespaces),
+                    category: category.trimmingCharacters(in: .whitespaces),
+                    userId: userId
+                )
+                try await firestoreService.addIngredient(ingredient)
+                let successMessage = "Great! I've added \(quantity.safeFormattedString) \(unit) of \(name) to your pantry! 🎉"
+                let aiMessage = ChatMessage(text: successMessage, isUser: false, timestamp: Date())
+                conversationHistory.append(aiMessage)
+                speak(successMessage)
+                
+            case .editIngredient(let id, let name, let quantity, let unit, let category):
+                // Validate inputs
+                guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
+                      quantity > 0 && quantity.isFinite,
+                      !unit.trimmingCharacters(in: .whitespaces).isEmpty else {
+                    let errorMessage = "Sorry, I need valid ingredient details to update your pantry!"
+                    let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+                    conversationHistory.append(aiMessage)
+                    speak(errorMessage)
+                    return
+                }
+                
+                if let existingIngredient = firestoreService.ingredients.first(where: { $0.id == id }) {
+                    let updatedIngredient = Ingredient(
+                        id: id,
+                        name: name.trimmingCharacters(in: .whitespaces),
+                        quantity: quantity,
+                        unit: unit.trimmingCharacters(in: .whitespaces),
+                        category: category.trimmingCharacters(in: .whitespaces),
+                        expirationDate: existingIngredient.expirationDate,
+                        dateAdded: existingIngredient.dateAdded,
+                        notes: existingIngredient.notes,
+                        inTrash: existingIngredient.inTrash,
+                        trashedAt: existingIngredient.trashedAt,
+                        createdAt: existingIngredient.createdAt,
+                        updatedAt: Timestamp(date: Date()),
+                        userId: userId,
+                        fatSecretFoodId: existingIngredient.fatSecretFoodId,
+                        brandName: existingIngredient.brandName,
+                        barcode: existingIngredient.barcode,
+                        nutritionInfo: existingIngredient.nutritionInfo,
+                        servingInfo: existingIngredient.servingInfo
+                    )
+                    try await firestoreService.updateIngredient(updatedIngredient)
+                    let successMessage = "Perfect! I've updated \(name) in your pantry! ✨"
+                    let aiMessage = ChatMessage(text: successMessage, isUser: false, timestamp: Date())
+                    conversationHistory.append(aiMessage)
+                    speak(successMessage)
+                } else {
+                    let errorMessage = "I couldn't find that ingredient to update. Could you try again?"
+                    let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+                    conversationHistory.append(aiMessage)
+                    speak(errorMessage)
+                }
+                
+            case .deleteIngredient(let id):
+                try await firestoreService.deleteIngredient(id)
+                let successMessage = "Done! I've removed that ingredient from your pantry! 🗑️"
+                let aiMessage = ChatMessage(text: successMessage, isUser: false, timestamp: Date())
+                conversationHistory.append(aiMessage)
+                speak(successMessage)
+                
+            case .updateQuantity(let id, let newQuantity):
+                // Validate quantity
+                guard newQuantity >= 0 && newQuantity.isFinite else {
+                    let errorMessage = "Sorry, I need a valid quantity to update!"
+                    let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+                    conversationHistory.append(aiMessage)
+                    speak(errorMessage)
+                    return
+                }
+                
+                if let existingIngredient = firestoreService.ingredients.first(where: { $0.id == id }) {
+                    let updatedIngredient = Ingredient(
+                        id: id,
+                        name: existingIngredient.name,
+                        quantity: newQuantity,
+                        unit: existingIngredient.unit,
+                        category: existingIngredient.category,
+                        expirationDate: existingIngredient.expirationDate,
+                        dateAdded: existingIngredient.dateAdded,
+                        notes: existingIngredient.notes,
+                        inTrash: existingIngredient.inTrash,
+                        trashedAt: existingIngredient.trashedAt,
+                        createdAt: existingIngredient.createdAt,
+                        updatedAt: Timestamp(date: Date()),
+                        userId: userId,
+                        fatSecretFoodId: existingIngredient.fatSecretFoodId,
+                        brandName: existingIngredient.brandName,
+                        barcode: existingIngredient.barcode,
+                        nutritionInfo: existingIngredient.nutritionInfo,
+                        servingInfo: existingIngredient.servingInfo
+                    )
+                    try await firestoreService.updateIngredient(updatedIngredient)
+                    let successMessage = "Updated! \(existingIngredient.name) now shows \(newQuantity) \(existingIngredient.unit)! 📝"
+                    let aiMessage = ChatMessage(text: successMessage, isUser: false, timestamp: Date())
+                    conversationHistory.append(aiMessage)
+                    speak(successMessage)
+                } else {
+                    let errorMessage = "I couldn't find that ingredient to update. Could you try again?"
+                    let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+                    conversationHistory.append(aiMessage)
+                    speak(errorMessage)
+                }
+            }
+        } catch {
+            print("❌ Pantry action error: \(error)")
+            let errorMessage = "Oops! I had trouble updating your pantry. Could you try that again?"
+            let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+            conversationHistory.append(aiMessage)
+            speak(errorMessage)
+        }
     }
     
     // Replace the existing requestSpeechAuthorization method
@@ -260,37 +567,36 @@ class GeminiService: NSObject, ObservableObject {
     
     // MARK: - Text-to-Speech
     func speak(_ text: String) {
-        // Check if TTS is available
         guard !text.isEmpty else { return }
         
-        stopSpeaking() // Stop any current speech
-        
-        // Check if speech synthesis voices are available
-        guard !AVSpeechSynthesisVoice.speechVoices().isEmpty else {
-            print("⚠️ TTS not available, continuing without speech")
-            connectionStatus = .ready
-            return
+        // Stop any current speech
+        if speechSynthesizer.isSpeaking {
+            speechSynthesizer.stopSpeaking(at: .immediate)
         }
         
         let utterance = AVSpeechUtterance(string: text)
         
-        // Try to get a voice, fallback to default if needed
-        if let voice = AVSpeechSynthesisVoice(language: "en-US") {
-            utterance.voice = voice
-        } else {
-            print("⚠️ en-US voice not available, using default")
-            utterance.voice = AVSpeechSynthesisVoice.speechVoices().first
-        }
-        
-        utterance.rate = Float(AVSpeechUtteranceDefaultSpeechRate * 1.1)
-        utterance.pitchMultiplier = Float(1.1)
-        
+        // Configure speech with error handling
         do {
+            // Try to use preferred voice, fall back gracefully
+            if let voice = AVSpeechSynthesisVoice(language: "en-US") {
+                utterance.voice = voice
+            } else {
+                // Use any available voice as fallback
+                utterance.voice = AVSpeechSynthesisVoice.speechVoices().first { voice in
+                    voice.language.hasPrefix("en")
+                } ?? AVSpeechSynthesisVoice.speechVoices().first
+            }
+            
+            utterance.rate = max(0.1, min(1.0, Float(AVSpeechUtteranceDefaultSpeechRate * 1.1)))
+            utterance.pitchMultiplier = max(0.5, min(2.0, 1.1))
+            
             isSpeaking = true
             connectionStatus = .speaking
             speechSynthesizer.speak(utterance)
+            
         } catch {
-            print("⚠️ TTS failed: \(error.localizedDescription)")
+            print("⚠️ TTS configuration failed: \(error.localizedDescription)")
             isSpeaking = false
             connectionStatus = .ready
         }
@@ -313,21 +619,27 @@ class GeminiService: NSObject, ObservableObject {
             connectionStatus = .processingRequest
             isProcessing = true
             
-            do {
-                let response = try await chat?.sendMessage(text)
-                if let responseText = response?.text {
-                    currentResponse = responseText
-                    let aiMessage = ChatMessage(text: responseText, isUser: false, timestamp: Date())
+            // Check if this is a pantry management request
+            let lowerText = text.lowercased()
+            if lowerText.contains("add") || lowerText.contains("edit") || lowerText.contains("delete") ||
+               lowerText.contains("update") || lowerText.contains("remove") || lowerText.contains("change") {
+                await handlePantryRequest(text)
+            } else {
+                // Regular chat
+                do {
+                    let response = try await chat?.sendMessage(text)
+                    if let responseText = response?.text {
+                        currentResponse = responseText
+                        let aiMessage = ChatMessage(text: responseText, isUser: false, timestamp: Date())
+                        conversationHistory.append(aiMessage)
+                        speak(responseText)
+                    }
+                } catch {
+                    let errorMessage = "Oops! I got a bit mixed up there - like confusing salt with sugar! Could you try asking again?"
+                    let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
                     conversationHistory.append(aiMessage)
-                    
-                    // Speak the response
-                    speak(responseText)
+                    speak(errorMessage)
                 }
-            } catch {
-                let errorMessage = "Oops! I got a bit mixed up there - like confusing salt with sugar! Could you try asking again?"
-                let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
-                conversationHistory.append(aiMessage)
-                speak(errorMessage)
             }
             
             isProcessing = false

@@ -445,6 +445,24 @@ struct IngredientsListView: View {
     }
 }
 
+extension Double {
+    var safeForDisplay: Double {
+        if isNaN || isInfinite || !isFinite {
+            return 0.0
+        }
+        return self
+    }
+    
+    var safeFormattedString: String {
+        let safeValue = safeForDisplay
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 2
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: safeValue)) ?? "0"
+    }
+}
+
 // MARK: - Supporting Views
 enum IngredientStatus {
     case expired, expiringSoon, fresh
@@ -470,6 +488,16 @@ struct IngredientRow: View {
         }
     }
     
+    private var safeQuantityText: String {
+        let quantity = ingredient.quantity.safeForDisplay
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 2
+        formatter.numberStyle = .decimal
+        let formattedQuantity = formatter.string(from: NSNumber(value: quantity)) ?? "0"
+        return "\(formattedQuantity) \(ingredient.unit)"
+    }
+    
     var body: some View {
         HStack(spacing: Constants.Design.standardPadding) {
             // Status indicator
@@ -478,51 +506,50 @@ struct IngredientRow: View {
                 .font(.title3)
             
             VStack(alignment: .leading, spacing: 4) {
-
                 // Ingredient name
                 Text(ingredient.name)
                     .font(.headline)
                     .foregroundColor(.textPrimary)
                 
-                // Quantity and category
-                HStack {
-                    Text("\(ingredient.quantity, specifier: "%.1f") \(ingredient.unit)")
-                        .font(.subheadline)
-                        .foregroundColor(.textSecondary)
-                    
-                    Spacer()
-                    
-                    Text(ingredient.category)
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.primaryOrange.opacity(0.2))
-                        .foregroundColor(.primaryOrange)
-                        .clipShape(Capsule())
-                }
+                // Quantity and unit - using safe formatting
+                Text(safeQuantityText)
+                    .font(.subheadline)
+                    .foregroundColor(.textSecondary)
+                
+                // Category
+                Text(ingredient.category)
+                    .font(.caption)
+                    .foregroundColor(.primaryOrange)
+                    .fontWeight(.medium)
                 
                 // Expiration info
                 if let expirationDate = ingredient.expirationDate {
-                    Text(formatExpirationDate(expirationDate))
+                    Text(formatExpirationDate(expirationDate.dateValue()))
                         .font(.caption)
                         .foregroundColor(statusColor)
+                        .fontWeight(.medium)
                 }
             }
             
             Spacer()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Constants.Design.smallPadding)
     }
     
-    private func formatExpirationDate(_ timestamp: Timestamp) -> String {
-        let date = timestamp.dateValue() // Convert Timestamp to Date
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .named
+    private func formatExpirationDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
         
-        if ingredient.isExpired {
-            return "Expired \(formatter.localizedString(for: date, relativeTo: Date()))"
+        if calendar.isDateInToday(date) {
+            return "Expires today"
+        } else if calendar.isDateInTomorrow(date) {
+            return "Expires tomorrow"
+        } else if date < now {
+            let daysPast = calendar.dateComponents([.day], from: date, to: now).day ?? 0
+            return "Expired \(daysPast) day\(daysPast == 1 ? "" : "s") ago"
         } else {
-            return "Expires \(formatter.localizedString(for: date, relativeTo: Date()))"
+            let daysUntil = calendar.dateComponents([.day], from: now, to: date).day ?? 0
+            return "Expires in \(daysUntil) day\(daysUntil == 1 ? "" : "s")"
         }
     }
 }
