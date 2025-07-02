@@ -24,9 +24,6 @@ struct Pantry_PalApp: App {
         
         firestoreService.configureFirestoreForReliability()
         firestoreService.monitorFirestoreConnection()
-        
-        // Set the authService reference
-        firestoreService.setAuthService(authService)
     }
     
     var body: some Scene {
@@ -35,6 +32,10 @@ struct Pantry_PalApp: App {
                 .environmentObject(authService)
                 .environmentObject(firestoreService)
                 .environmentObject(fatSecretService)
+                .onAppear {
+                    // Set the authService reference after the view appears
+                    firestoreService.setAuthService(authService)
+                }
         }
     }
 }

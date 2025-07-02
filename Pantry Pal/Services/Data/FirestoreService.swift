@@ -91,15 +91,55 @@ class FirestoreService: ObservableObject {
         historyListener?.remove()
     }
     
-    // MARK: - Ingredient Operations
+    // MARK: - Authentication Check
+    private func ensureAuthenticated() throws -> String {
+        guard let userId = authService?.user?.id else {
+            throw FirestoreError.userNotAuthenticated
+        }
+        return userId
+    }
+
     func loadIngredients(for userId: String) async {
         print("🔄 Loading ingredients for user: \(userId)")
+        
+        // Add a small delay to ensure authService is set
+        if authService == nil {
+            print("⚠️ AuthService not set, waiting...")
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+            
+            if authService == nil {
+                print("❌ AuthService still not set after waiting")
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                }
+                return
+            }
+        }
         
         DispatchQueue.main.async {
             self.isLoading = true
         }
         
         do {
+            // Wait for auth service to be ready
+            guard let authService = self.authService else {
+                print("❌ AuthService not set")
+                throw FirestoreError.userNotAuthenticated
+            }
+            
+            // Ensure user is ready before proceeding
+            let isUserReady = await authService.ensureUserReady()
+            guard isUserReady, let authenticatedUserId = authService.user?.id else {
+                print("❌ User not authenticated or ready")
+                throw FirestoreError.userNotAuthenticated
+            }
+            
+            // Verify the passed userId matches the authenticated user
+            guard authenticatedUserId == userId else {
+                print("❌ User ID mismatch: \(userId) vs \(authenticatedUserId)")
+                throw FirestoreError.userNotAuthenticated
+            }
+            
             let snapshot = try await db.collection("users")
                 .document(userId)
                 .collection("ingredients")
@@ -120,10 +160,23 @@ class FirestoreService: ObservableObject {
         } catch {
             print("❌ Error loading ingredients: \(error)")
             DispatchQueue.main.async {
-                self.errorMessage = "Failed to load ingredients"
                 self.isLoading = false
             }
         }
+    }
+    
+    // MARK: - Helper Methods
+    private func ensureUserAuthenticated() async throws -> String {
+        guard let authService = self.authService else {
+            throw FirestoreError.userNotAuthenticated
+        }
+        
+        let isUserReady = await authService.ensureUserReady()
+        guard isUserReady, let userId = authService.user?.id else {
+            throw FirestoreError.userNotAuthenticated
+        }
+        
+        return userId
     }
     
     func startIngredientsListener(for userId: String) {
@@ -168,9 +221,7 @@ class FirestoreService: ObservableObject {
     }
     
     func addIngredient(_ ingredient: Ingredient) async throws {
-        guard let userId = authService?.user?.id else {
-            throw FirestoreError.userNotAuthenticated
-        }
+        let userId = try await ensureUserAuthenticated()
         
         let ingredientRef = db.collection("users").document(userId)
             .collection("ingredients").document()
@@ -188,9 +239,7 @@ class FirestoreService: ObservableObject {
     }
     
     func updateIngredient(_ ingredient: Ingredient) async throws {
-        guard let userId = authService?.user?.id else {
-            throw FirestoreError.userNotAuthenticated
-        }
+        let userId = try await ensureUserAuthenticated()
         
         guard let ingredientId = ingredient.id else {
             throw FirestoreError.saveFailed("Invalid ingredient ID")
