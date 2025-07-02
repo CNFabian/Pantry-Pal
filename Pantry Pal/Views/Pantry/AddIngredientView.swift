@@ -34,7 +34,11 @@ struct AddIngredientView: View {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !quantity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         Double(quantity) != nil &&
-        Double(quantity)! > 0
+        (Double(quantity) ?? 0).safeForDisplay > 0
+    }
+    
+    private func sanitizedQuantity() -> Double {
+        return (Double(quantity) ?? 0).safeForDisplay
     }
     
     var body: some View {
@@ -98,10 +102,10 @@ struct AddIngredientView: View {
             .alert("Error", isPresented: $showingErrorAlert) {
                 Button("OK") { }
                 if errorMessage.contains("not authenticated") {
-                        Button("Sign Out & Retry") {
-                            authService.signOut()
-                        }
+                    Button("Sign Out & Retry") {
+                        authService.signOut()
                     }
+                }
             } message: {
                 Text(errorMessage)
             }
@@ -161,6 +165,18 @@ struct AddIngredientView: View {
                         .textFieldStyle(CustomTextFieldStyle())
                         .keyboardType(.decimalPad)
                         .focused($isQuantityFieldFocused)
+                        .onChange(of: quantity) { newValue in
+                            // Sanitize input to prevent NaN values
+                            let filtered = newValue.filter { "0123456789.".contains($0) }
+                            if filtered != newValue {
+                                quantity = filtered
+                            }
+                            // Ensure only one decimal point
+                            let components = filtered.components(separatedBy: ".")
+                            if components.count > 2 {
+                                quantity = components[0] + "." + components[1]
+                            }
+                        }
                 }
                 .frame(maxWidth: .infinity)
                 
@@ -182,7 +198,7 @@ struct AddIngredientView: View {
                                 .foregroundColor(.textSecondary)
                         }
                         .padding(.horizontal, Constants.Design.standardPadding)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Constants.Design.smallPadding)
                         .background(
                             RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
                                 .fill(Color(.systemGray6))
@@ -213,7 +229,7 @@ struct AddIngredientView: View {
                         .foregroundColor(.textSecondary)
                 }
                 .padding(.horizontal, Constants.Design.standardPadding)
-                .padding(.vertical, 12)
+                .padding(.vertical, Constants.Design.smallPadding)
                 .background(
                     RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
                         .fill(Color(.systemGray6))
@@ -224,25 +240,18 @@ struct AddIngredientView: View {
     }
     
     private var expirationSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Label("Expiration Date", systemImage: "calendar")
                 .font(.headline)
                 .foregroundColor(.textPrimary)
             
-            // Toggle for expiration date
             Toggle("Has expiration date", isOn: $hasExpirationDate)
-                .toggleStyle(SwitchToggleStyle(tint: .primaryOrange))
+                .tint(.primaryOrange)
             
-            // Date picker (shown when toggle is on)
             if hasExpirationDate {
-                DatePicker(
-                    "Expiration Date",
-                    selection: $expirationDate,
-                    in: Date()...,
-                    displayedComponents: .date
-                )
-                .datePickerStyle(.compact)
-                .accentColor(.primaryOrange)
+                DatePicker("Expires on", selection: $expirationDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .tint(.primaryOrange)
             }
         }
     }
@@ -255,25 +264,24 @@ struct AddIngredientView: View {
             
             TextField("Any additional notes...", text: $notes, axis: .vertical)
                 .textFieldStyle(CustomTextFieldStyle())
-                .lineLimit(3...6)
                 .focused($isNotesFieldFocused)
+                .lineLimit(3...6)
         }
     }
     
-    // MARK: - Add Button
     private var addButton: some View {
         Button(action: addIngredient) {
             HStack {
                 if isLoading {
                     ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.9)
+                        .scaleEffect(0.8)
+                        .tint(.white)
                 } else {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title3)
+                    Image(systemName: "plus")
+                        .font(.headline)
                 }
                 
-                Text(isLoading ? "Adding..." : "Add to Pantry")
+                Text(isLoading ? "Adding..." : "Add Ingredient")
                     .font(.headline)
                     .fontWeight(.semibold)
             }
@@ -282,7 +290,7 @@ struct AddIngredientView: View {
             .padding(.vertical, Constants.Design.standardPadding)
             .background(
                 RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
-                    .fill(isFormValid ? Color.primaryOrange : Color.gray)
+                    .fill(isFormValid && !isLoading ? Color.primaryOrange : Color.gray)
             )
         }
         .disabled(!isFormValid || isLoading)
@@ -291,74 +299,42 @@ struct AddIngredientView: View {
     
     // MARK: - Actions
     private func addIngredient() {
-        print("🐛 DEBUG: addIngredient called")
+        guard isFormValid else { return }
         
-        guard isFormValid else {
-            print("🐛 DEBUG: Form is not valid")
+        Task {
+            await performAddIngredient()
+        }
+    }
+    
+    @MainActor
+    private func performAddIngredient() async {
+        guard let userId = authService.user?.id else {
+            errorMessage = "You must be signed in to add ingredients"
+            showingErrorAlert = true
             return
         }
         
         isLoading = true
-        hideKeyboard()
         
-        Task {
-            // First ensure the user is properly authenticated and ready
-            let userReady = await authService.ensureUserReady()
-            
-            guard userReady, let userId = authService.user?.id else {
-                await MainActor.run {
-                    isLoading = false
-                    errorMessage = "User not authenticated. Please sign out and sign in again."
-                    showingErrorAlert = true
-                    print("🐛 DEBUG: User not ready for ingredient addition")
-                }
-                return
-            }
-            
-            print("🐛 DEBUG: User ready, proceeding with ingredient addition")
-            print("🐛 DEBUG: User ID: \(userId)")
-            
-            let ingredient = Ingredient(
-                id: nil,
-                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                quantity: Double(quantity) ?? 0,
-                unit: selectedUnit,
-                category: selectedCategory,
-                expirationDate: hasExpirationDate ? Timestamp(date: expirationDate) : nil,
-                dateAdded: Timestamp(date: Date()),
-                notes: notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes.trimmingCharacters(in: .whitespaces),
-                inTrash: false,
-                trashedAt: nil,
-                createdAt: Timestamp(date: Date()),
-                updatedAt: Timestamp(date: Date()),
-                userId: userId,
-                fatSecretFoodId: nil,
-                brandName: nil,
-                barcode: nil,
-                nutritionInfo: nil,
-                servingInfo: nil
-            )
-            
-            print("🐛 DEBUG: Created ingredient object: \(ingredient)")
-            
-            do {
-                try await firestoreService.addIngredient(ingredient)
-                try await firestoreService.loadIngredients(for: userId)
-                
-                await MainActor.run {
-                    isLoading = false
-                    showingSuccessAlert = true
-                    print("🐛 DEBUG: Successfully added ingredient")
-                }
-            } catch {
-                await MainActor.run {
-                    isLoading = false
-                    errorMessage = "Failed to add ingredient: \(error.localizedDescription)"
-                    showingErrorAlert = true
-                    print("🐛 DEBUG: Error in addIngredient: \(error)")
-                }
-            }
+        let ingredient = Ingredient(
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            quantity: sanitizedQuantity(),
+            unit: selectedUnit,
+            category: selectedCategory,
+            expirationDate: hasExpirationDate ? Timestamp(date: expirationDate) : nil,
+            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines),
+            userId: userId
+        )
+        
+        do {
+            try await firestoreService.addIngredient(ingredient)
+            showingSuccessAlert = true
+        } catch {
+            errorMessage = "Failed to add ingredient: \(error.localizedDescription)"
+            showingErrorAlert = true
         }
+        
+        isLoading = false
     }
     
     private func clearForm() {
@@ -369,26 +345,34 @@ struct AddIngredientView: View {
         hasExpirationDate = false
         expirationDate = Date()
         notes = ""
-        hideKeyboard()
-    }
-    
-    private func hideKeyboard() {
+        
+        // Reset focus
         isNameFieldFocused = false
         isQuantityFieldFocused = false
         isNotesFieldFocused = false
     }
+    
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
 }
 
-// MARK: - Picker Sheets
+// MARK: - Supporting Views
 struct UnitPickerSheet: View {
     @Binding var selectedUnit: String
     @Environment(\.dismiss) private var dismiss
     
+    private let units = [
+        "pieces", "cups", "ounces", "pounds", "grams", "kilograms",
+        "liters", "milliliters", "tablespoons", "teaspoons",
+        "cloves", "bunches", "cans", "bottles", "packages"
+    ]
+    
     var body: some View {
         NavigationView {
-            List(Constants.measurementUnits, id: \.self) { unit in
+            List(units, id: \.self) { unit in
                 HStack {
-                    Text(unit)
+                    Text(unit.capitalized)
                         .font(.body)
                     
                     Spacer()
@@ -415,7 +399,7 @@ struct UnitPickerSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium])
     }
 }
 
@@ -454,7 +438,7 @@ struct CategoryPickerSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium])
     }
 }
 

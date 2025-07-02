@@ -497,7 +497,7 @@ struct IngredientRow: View {
         let formattedQuantity = formatter.string(from: NSNumber(value: quantity)) ?? "0"
         return "\(formattedQuantity) \(ingredient.unit)"
     }
-    
+   
     var body: some View {
         HStack(spacing: Constants.Design.standardPadding) {
             // Status indicator
