@@ -22,12 +22,11 @@ struct IngredientsListView: View {
     @State private var showingEditSheet = false
     @State private var selectedIngredient: Ingredient?
     @StateObject private var fatSecretService = FatSecretService()
-    @EnvironmentObject var authenticationService: AuthenticationService
     
     private var debugInfo: String {
         let ingredientCount = firestoreService.ingredients.count
         let userId = authService.user?.id ?? "no-user-id"
-        let isLoading = firestoreService.isLoadingIngredients
+        let isLoading = firestoreService.isLoading  // Changed from isLoadingIngredients
         
         return """
         Ingredients count: \(ingredientCount)
@@ -108,7 +107,7 @@ struct IngredientsListView: View {
                 }
                 
                 // Main Content
-                if firestoreService.isLoadingIngredients {
+                if firestoreService.isLoading {
                     loadingState
                 } else if filteredIngredients.isEmpty {
                     emptyState
@@ -126,7 +125,7 @@ struct IngredientsListView: View {
                         fatSecretFood: food,
                         isPresented: $showingFatSecretSelection,
                         firestoreService: firestoreService,
-                        authenticationService: authenticationService
+                        authenticationService: authService
                     )
                 }
             }
@@ -602,8 +601,8 @@ struct CategoryFilterSheet: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    selectedIngredient = ingredient
-                    showingEditSheet = true
+                    selectedCategory = category
+                    dismiss()
                 }
             }
             .navigationTitle("Filter by Category")
