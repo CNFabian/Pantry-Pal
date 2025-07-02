@@ -83,6 +83,29 @@ class FirestoreService: ObservableObject {
         }
     }
     
+    private func validateIngredientData(_ ingredient: Ingredient) -> Ingredient {
+        return Ingredient.createSafe(
+            id: ingredient.id,
+            name: ingredient.name,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit,
+            category: ingredient.category,
+            expirationDate: ingredient.expirationDate,
+            dateAdded: ingredient.dateAdded,
+            notes: ingredient.notes,
+            inTrash: ingredient.inTrash,
+            trashedAt: ingredient.trashedAt,
+            createdAt: ingredient.createdAt,
+            updatedAt: ingredient.updatedAt,
+            userId: ingredient.userId,
+            fatSecretFoodId: ingredient.fatSecretFoodId,
+            brandName: ingredient.brandName,
+            barcode: ingredient.barcode,
+            nutritionInfo: ingredient.nutritionInfo,
+            servingInfo: ingredient.servingInfo
+        )
+    }
+    
     // MARK: - Listener Management
     private func removeAllListeners() {
         ingredientsListener?.remove()

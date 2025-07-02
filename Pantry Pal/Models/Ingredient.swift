@@ -79,10 +79,29 @@ struct Ingredient: Identifiable, Codable {
     }
     
     var displayQuantity: String {
-        if quantity.truncatingRemainder(dividingBy: 1) == 0 {
-            return String(Int(quantity))
+        let safeValue = quantity.safeForDisplay
+        if safeValue.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(Int(safeValue))
         } else {
-            return String(format: "%.1f", quantity)
+            return String(format: "%.1f", safeValue)
+        }
+    }
+    
+    var safeDisplayQuantity: String {
+        let safeValue = quantity.safeForDisplay
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 2
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: safeValue)) ?? "0"
+    }
+
+    var safeTruncatedQuantity: String {
+        let safeValue = quantity.safeForDisplay
+        if safeValue.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(Int(safeValue))
+        } else {
+            return String(format: "%.1f", safeValue)
         }
     }
 }

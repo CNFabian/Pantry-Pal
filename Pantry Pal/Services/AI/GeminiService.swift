@@ -87,6 +87,7 @@ class GeminiService: NSObject, ObservableObject {
             - Give meal planning advice
             - Help with grocery shopping suggestions
             - Provide food safety information
+            - View and discuss current pantry contents
             
             PANTRY MANAGEMENT:
             When users want to manage their pantry, respond with valid JSON followed by a friendly message.
@@ -103,10 +104,15 @@ class GeminiService: NSObject, ObservableObject {
             Valid actions: "add_ingredient", "edit_ingredient", "delete_ingredient", "update_quantity"
             Valid categories: "Produce", "Dairy", "Meat", "Grains", "Spices", "Condiments", "Other"
             
+            PANTRY VIEWING AND RECIPES:
+            When users ask about their pantry contents or want recipe suggestions, use the pantry context provided in each message.
+            Be specific about what ingredients they have and suggest realistic recipes.
+            
             IMPORTANT: 
             - Always use valid numbers for quantity (never NaN, infinity, or text)
             - Include both JSON and a friendly response
             - If unsure about details, ask the user for clarification
+            - Reference specific ingredients from their pantry when making suggestions
             
             Keep responses conversational, helpful, and under 100 words when possible.
             """)
@@ -174,6 +180,24 @@ class GeminiService: NSObject, ObservableObject {
             conversationHistory.append(aiMessage)
             speak(errorMessage)
         }
+    }
+    
+    private func getCurrentPantryContext() -> String {
+        guard let firestoreService = firestoreService,
+              !firestoreService.ingredients.isEmpty else {
+            return "The user currently has no ingredients in their pantry."
+        }
+        
+        let ingredientsList = firestoreService.ingredients.map { ingredient in
+            "\(ingredient.name): \(ingredient.safeDisplayQuantity) \(ingredient.unit) (Category: \(ingredient.category))"
+        }.joined(separator: "\n")
+        
+        return """
+        Current pantry contents:
+        \(ingredientsList)
+        
+        Total ingredients: \(firestoreService.ingredients.count)
+        """
     }
 
     private func parseActionFromResponse(_ response: String) -> PantryAction? {
@@ -611,42 +635,47 @@ class GeminiService: NSObject, ObservableObject {
     }
     
     // MARK: - Chat Functions
-    func sendMessage(_ text: String, isUser: Bool = true) async {
-        let message = ChatMessage(text: text, isUser: isUser, timestamp: Date())
-        conversationHistory.append(message)
-        
+    func sendMessage(_ message: String, isUser: Bool = true) async {
         if isUser {
-            connectionStatus = .processingRequest
-            isProcessing = true
+            let userMessage = ChatMessage(text: message, isUser: true, timestamp: Date())
+            conversationHistory.append(userMessage)
+        }
+        
+        isProcessing = true
+        connectionStatus = .processingRequest
+        currentResponse = ""
+        
+        do {
+            // Include current pantry context in the prompt
+            let pantryContext = getCurrentPantryContext()
+            let enhancedMessage = """
+            \(pantryContext)
             
-            // Check if this is a pantry management request
-            let lowerText = text.lowercased()
-            if lowerText.contains("add") || lowerText.contains("edit") || lowerText.contains("delete") ||
-               lowerText.contains("update") || lowerText.contains("remove") || lowerText.contains("change") {
-                await handlePantryRequest(text)
-            } else {
-                // Regular chat
-                do {
-                    let response = try await chat?.sendMessage(text)
-                    if let responseText = response?.text {
-                        currentResponse = responseText
-                        let aiMessage = ChatMessage(text: responseText, isUser: false, timestamp: Date())
-                        conversationHistory.append(aiMessage)
-                        speak(responseText)
-                    }
-                } catch {
-                    let errorMessage = "Oops! I got a bit mixed up there - like confusing salt with sugar! Could you try asking again?"
-                    let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+            User message: \(message)
+            """
+            
+            let response = try await chat?.sendMessage(enhancedMessage)
+            if let responseText = response?.text {
+                // Check if response contains a JSON action
+                if let action = parseActionFromResponse(responseText) {
+                    await executePantryAction(action)
+                } else {
+                    // Regular chat response
+                    currentResponse = responseText
+                    let aiMessage = ChatMessage(text: responseText, isUser: false, timestamp: Date())
                     conversationHistory.append(aiMessage)
-                    speak(errorMessage)
+                    speak(responseText)
                 }
             }
-            
-            isProcessing = false
-            if connectionStatus == .processingRequest {
-                connectionStatus = .ready
-            }
+        } catch {
+            let errorMessage = "I had trouble understanding that. Could you try asking again?"
+            let aiMessage = ChatMessage(text: errorMessage, isUser: false, timestamp: Date())
+            conversationHistory.append(aiMessage)
+            speak(errorMessage)
         }
+        
+        isProcessing = false
+        connectionStatus = .ready
     }
     
     // MARK: - Barcode Integration

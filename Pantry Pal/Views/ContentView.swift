@@ -72,6 +72,7 @@ struct MainTabView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var fatSecretService: FatSecretService
+    @StateObject private var geminiService = GeminiService()
     
     var body: some View {
         TabView {
@@ -99,6 +100,7 @@ struct MainTabView: View {
                         Text("Recipes")
                     }
             GeminiChatView()
+                .environmentObject(geminiService)
                 .tabItem {
                     Image(systemName: "message.circle.fill")
                     Text("AI Chat")
@@ -119,6 +121,7 @@ struct MainTabView: View {
         }
         .accentColor(.primaryOrange)
         .onAppear {
+            geminiService.configure(firestoreService: firestoreService, authService: authService)
             loadInitialData()
             print("🐛 DEBUG: MainTabView appeared")
                 if let userId = authService.user?.id {

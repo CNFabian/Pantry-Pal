@@ -489,13 +489,7 @@ struct IngredientRow: View {
     }
     
     private var safeQuantityText: String {
-        let quantity = ingredient.quantity.safeForDisplay
-        let formatter = NumberFormatter()
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 2
-        formatter.numberStyle = .decimal
-        let formattedQuantity = formatter.string(from: NSNumber(value: quantity)) ?? "0"
-        return "\(formattedQuantity) \(ingredient.unit)"
+        return ingredient.safeDisplayQuantity
     }
    
     var body: some View {

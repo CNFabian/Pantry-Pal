@@ -208,6 +208,11 @@ struct EditIngredientView: View {
         .disabled(isLoading)
     }
     
+    private var safeQuantityValue: Double {
+        let value = Double(quantity) ?? 0
+        return value.safeForDisplay
+    }
+    
     private func saveChanges() async {
         guard let userId = authService.user?.id,
               let ingredientId = ingredient.id,
@@ -221,7 +226,7 @@ struct EditIngredientView: View {
         let updatedIngredient = Ingredient(
             id: ingredientId,
             name: name.trimmingCharacters(in: .whitespaces),
-            quantity: quantityValue,
+            quantity: safeQuantityValue,
             unit: selectedUnit,
             category: selectedCategory,
             expirationDate: hasExpiration ? Timestamp(date: expirationDate) : nil,

@@ -38,7 +38,8 @@ struct AddIngredientView: View {
     }
     
     private func sanitizedQuantity() -> Double {
-        return (Double(quantity) ?? 0).safeForDisplay
+        let value = Double(quantity) ?? 0
+        return value.safeForDisplay
     }
     
     var body: some View {
