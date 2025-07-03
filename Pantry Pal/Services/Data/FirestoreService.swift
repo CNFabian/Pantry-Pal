@@ -44,6 +44,7 @@ class FirestoreService: ObservableObject {
     private var historyListener: ListenerRegistration?
     private var authService: AuthenticationService?
     private var ingredientCache: IngredientCacheService?
+    static let shared = FirestoreService()
     
     init() {
         configureFirestore()

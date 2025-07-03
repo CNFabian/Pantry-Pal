@@ -21,6 +21,8 @@ struct IngredientsListView: View {
     @State private var fatSecretFood: FatSecretFood?
     @State private var showingEditSheet = false
     @State private var selectedIngredient: Ingredient?
+    @State private var hasLoadedOnce = false
+    @State private var lastLoadedUserId: String? = nil
     @StateObject private var fatSecretService = FatSecretService()
     
     private var debugInfo: String {
@@ -178,14 +180,22 @@ struct IngredientsListView: View {
         .onAppear {
             print("🐛 DEBUG: IngredientsListView appeared")
             Task {
-                await refreshIngredients()
+                await loadIngredientsIfNeeded()
             }
         }
         .onReceive(authService.$user) { user in
-            print("🐛 DEBUG: User changed in IngredientsListView: \(String(describing: user?.id))")
-            if let userId = user?.id {
-                Task {
-                    await firestoreService.loadIngredients(for: userId)
+            let currentUserId = user?.id
+            print("🐛 DEBUG: User changed in IngredientsListView: \(String(describing: currentUserId))")
+            
+            // Only load if user actually changed or if we haven't loaded yet
+            if currentUserId != lastLoadedUserId {
+                lastLoadedUserId = currentUserId
+                hasLoadedOnce = false // Reset for new user
+                
+                if let userId = currentUserId {
+                    Task {
+                        await loadIngredientsIfNeeded()
+                    }
                 }
             }
         }
@@ -382,18 +392,42 @@ struct IngredientsListView: View {
     }
     
     // MARK: - Actions
+    private func loadIngredientsIfNeeded() async {
+        guard let userId = authService.user?.id else {
+            print("🐛 DEBUG: No user ID available for loading ingredients")
+            return
+        }
+        
+        // Prevent duplicate loading for the same user
+        if hasLoadedOnce && lastLoadedUserId == userId {
+            print("🐛 DEBUG: Ingredients already loaded for user: \(userId)")
+            return
+        }
+        
+        print("🐛 DEBUG: Loading ingredients for user: \(userId)")
+        hasLoadedOnce = true
+        lastLoadedUserId = userId
+        
+        await firestoreService.loadIngredients(for: userId)
+        
+        await MainActor.run {
+            print("🐛 DEBUG: Ingredients loaded. Count: \(firestoreService.ingredients.count)")
+        }
+    }
+    
     private func refreshIngredients() async {
-        print("🐛 DEBUG: refreshIngredients called")
+        print("🐛 DEBUG: refreshIngredients called (manual refresh)")
         guard let userId = authService.user?.id else {
             print("🐛 DEBUG: No user ID available for refreshing ingredients")
             return
         }
         
-        print("🐛 DEBUG: Loading ingredients for user: \(userId)")
+        // For manual refresh, always reload regardless of cache
+        print("🐛 DEBUG: Force refreshing ingredients for user: \(userId)")
         await firestoreService.loadIngredients(for: userId)
         
         await MainActor.run {
-            print("🐛 DEBUG: Ingredients loaded. Count: \(firestoreService.ingredients.count)")
+            print("🐛 DEBUG: Ingredients refreshed. Count: \(firestoreService.ingredients.count)")
         }
     }
     

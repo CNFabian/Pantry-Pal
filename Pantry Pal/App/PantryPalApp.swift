@@ -6,11 +6,13 @@
 import SwiftUI
 import Firebase
 import FirebaseInAppMessaging
+import FirebaseAnalytics  // ADD this import
 
 @main
 struct Pantry_PalApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authService = AuthenticationService()
-    @StateObject private var firestoreService = FirestoreService()
+    private let firestoreService = FirestoreService.shared
     @StateObject private var fatSecretService = FatSecretService()
     @StateObject private var ingredientCache = IngredientCacheService.shared
     @StateObject private var settingsService = SettingsService()
@@ -18,6 +20,10 @@ struct Pantry_PalApp: App {
     init() {
         // Configure Firebase when the app starts
         FirebaseApp.configure()
+        
+        // Configure Firebase Analytics to work with In-App Messaging
+        Analytics.setAnalyticsCollectionEnabled(true)
+        print("✅ Firebase Analytics configured")
         
         // Disable In-App Messaging
         InAppMessaging.inAppMessaging().automaticDataCollectionEnabled = false
