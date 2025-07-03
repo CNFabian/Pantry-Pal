@@ -37,7 +37,7 @@ class FirestoreService: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage = ""
     
-    private let db = Firestore.firestore()
+    private lazy var db = Firestore.firestore()
     private var ingredientsListener: ListenerRegistration?
     private var recipesListener: ListenerRegistration?
     private var notificationsListener: ListenerRegistration?

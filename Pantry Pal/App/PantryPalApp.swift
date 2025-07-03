@@ -6,13 +6,13 @@
 import SwiftUI
 import Firebase
 import FirebaseInAppMessaging
-import FirebaseAnalytics  // ADD this import
+import FirebaseAnalytics
 
 @main
 struct Pantry_PalApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authService = AuthenticationService()
-    private let firestoreService = FirestoreService.shared
+    @StateObject private var firestoreService = FirestoreService.shared  // ✅ Use @StateObject
     @StateObject private var fatSecretService = FatSecretService()
     @StateObject private var ingredientCache = IngredientCacheService.shared
     @StateObject private var settingsService = SettingsService()
@@ -29,9 +29,6 @@ struct Pantry_PalApp: App {
         InAppMessaging.inAppMessaging().automaticDataCollectionEnabled = false
         InAppMessaging.inAppMessaging().messageDisplaySuppressed = true
         print("✅ Firebase configured with In-App Messaging disabled")
-        
-        firestoreService.configureFirestoreForReliability()
-        firestoreService.monitorFirestoreConnection()
     }
     
     var body: some Scene {
@@ -43,6 +40,10 @@ struct Pantry_PalApp: App {
                 .environmentObject(ingredientCache)
                 .environmentObject(settingsService)
                 .onAppear {
+                    // Configure Firestore after Firebase is initialized
+                    firestoreService.configureFirestoreForReliability()
+                    firestoreService.monitorFirestoreConnection()
+                    
                     // Set the authService reference after the view appears
                     firestoreService.setAuthService(authService)
                     firestoreService.setIngredientCache(ingredientCache)
