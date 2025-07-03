@@ -49,6 +49,7 @@ struct MainTabView: View {
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var fatSecretService: FatSecretService
     @EnvironmentObject var ingredientCache: IngredientCacheService
+    @EnvironmentObject var settingsService: SettingsService  // Add this line
     @StateObject private var geminiService = GeminiService()
     
     var body: some View {
@@ -73,7 +74,8 @@ struct MainTabView: View {
                 Image(systemName: "message.fill")
                 Text("AI Chat")
             }
-            .environmentObject(fatSecretService) // Make sure to pass your FatSecret service
+            .environmentObject(fatSecretService)
+            .environmentObject(settingsService)  // Add this line
             
             NotificationsView()
                 .tabItem {
@@ -90,13 +92,15 @@ struct MainTabView: View {
         .accentColor(.primaryOrange)
         .onAppear {
             geminiService.configure(firestoreService: firestoreService, authService: authService)
+            geminiService.setSettingsService(settingsService)  // Add this line
             loadInitialData()
             print("🐛 DEBUG: MainTabView appeared")
-                if let userId = authService.user?.id {
-                    Task {
-                        await firestoreService.loadIngredients(for: userId)
-                    }
+            if let userId = authService.user?.id {
+                Task {
+                    await firestoreService.loadIngredients(for: userId)
+                    await settingsService.loadUserSettings()  // Add this line
                 }
+            }
         }
     }
     
@@ -110,6 +114,7 @@ struct MainTabView: View {
             await firestoreService.loadIngredients(for: userId)
             await firestoreService.loadRecipes(for: userId)
             await firestoreService.loadNotifications(for: userId)
+            await settingsService.loadUserSettings()  // Add this line
         }
     }
 }

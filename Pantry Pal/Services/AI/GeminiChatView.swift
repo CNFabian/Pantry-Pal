@@ -11,8 +11,9 @@ struct GeminiChatView: View {
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var ingredientCache: IngredientCacheService
+    @EnvironmentObject private var settingsService: SettingsService
 
-    
+    @State private var showSettings = false
     @State private var showingBarcodeScanner = false
     @State private var scannedBarcode: String?
     @State private var messageText = ""
@@ -60,10 +61,20 @@ struct GeminiChatView: View {
                         Image(systemName: "ellipsis.circle")
                             .foregroundColor(.primaryOrange)
                     }
+                    Button {
+                               showSettings = true
+                           } label: {
+                               Image(systemName: "gearshape")
+                                   .foregroundColor(.primaryOrange)
+                           }
                 }
             }
             .sheet(isPresented: $showingBarcodeScanner) {
                 BarcodeScannerView(scannedCode: $scannedBarcode, isPresented: $showingBarcodeScanner)
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+                    .environmentObject(settingsService)
             }
             .onChange(of: scannedBarcode) { _, newBarcode in
                 if let barcode = newBarcode {

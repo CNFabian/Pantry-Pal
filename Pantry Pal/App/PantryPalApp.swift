@@ -13,6 +13,7 @@ struct Pantry_PalApp: App {
     @StateObject private var firestoreService = FirestoreService()
     @StateObject private var fatSecretService = FatSecretService()
     @StateObject private var ingredientCache = IngredientCacheService.shared
+    @StateObject private var settingsService = SettingsService()
     
     init() {
         // Configure Firebase when the app starts
@@ -34,10 +35,12 @@ struct Pantry_PalApp: App {
                 .environmentObject(firestoreService)
                 .environmentObject(fatSecretService)
                 .environmentObject(ingredientCache)
+                .environmentObject(settingsService)
                 .onAppear {
                     // Set the authService reference after the view appears
                     firestoreService.setAuthService(authService)
                     firestoreService.setIngredientCache(ingredientCache)
+                    settingsService.setAuthService(authService)
                 }
         }
     }
