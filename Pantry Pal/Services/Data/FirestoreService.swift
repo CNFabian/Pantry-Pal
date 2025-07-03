@@ -272,6 +272,7 @@ class FirestoreService: ObservableObject {
             print("✅ Ingredient added successfully")
             Task { @MainActor in
                 self.ingredientCache?.addIngredient(ingredientWithId)
+                self.ingredients.append(ingredientWithId) // Add this line
             }
         } catch {
             print("❌ Error adding ingredient: \(error)")
@@ -308,6 +309,12 @@ class FirestoreService: ObservableObject {
             }
             
             try await ingredientRef.setData(data)
+
+            Task { @MainActor in
+                if let index = self.ingredients.firstIndex(where: { $0.id == ingredient.id }) {
+                    self.ingredients[index] = ingredient
+                }
+            }
             
             // Update local ingredients array
             if let index = ingredients.firstIndex(where: { $0.id == ingredient.id }) {
@@ -334,6 +341,10 @@ class FirestoreService: ObservableObject {
         
         do {
             try await ingredientRef.delete()
+            
+            Task { @MainActor in
+                self.ingredients.removeAll { $0.id == ingredientId }
+            }
             
             // Remove from local ingredients array
             ingredients.removeAll { $0.id == ingredientId }
