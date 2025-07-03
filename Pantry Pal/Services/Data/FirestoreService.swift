@@ -271,7 +271,7 @@ class FirestoreService: ObservableObject {
             try ingredientRef.setData(from: ingredientWithId)
             print("✅ Ingredient added successfully")
             Task { @MainActor in
-                self.ingredientCache?.addIngredient(validatedIngredient)
+                self.ingredientCache?.addIngredient(ingredientWithId)
             }
         } catch {
             print("❌ Error adding ingredient: \(error)")

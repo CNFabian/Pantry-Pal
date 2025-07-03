@@ -16,7 +16,7 @@ class IngredientCacheService: ObservableObject {
     
     private var userId: String?
     
-    enum CacheStatus {
+    enum CacheStatus: Equatable {
         case empty
         case loading
         case ready
@@ -136,7 +136,7 @@ class IngredientCacheService: ObservableObject {
     
     /// Check if cache is ready for use
     func isCacheReady() -> Bool {
-        return cacheStatus == .ready && !cachedIngredients.isEmpty
+        return cacheStatus == CacheStatus.ready && !cachedIngredients.isEmpty
     }
     
     /// Get cache statistics for debugging

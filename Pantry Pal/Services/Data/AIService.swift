@@ -166,7 +166,7 @@ class AIService: ObservableObject {
         do {
             let decoded = try JSONDecoder().decode(RecipeResponse.self, from: data)
             print("✅ AIService: Successfully parsed recipe: \(decoded.recipe.name)")
-            return decoded.recipe
+            return decoded.recipe.toRecipe()
         } catch {
             print("❌ AIService: JSON parsing error: \(error)")
             print("❌ AIService: Raw JSON: \(cleanedString)")
@@ -358,10 +358,9 @@ class AIService: ObservableObject {
             totalTime: "\(calculatedTotalTime) minutes",
             servings: desiredServings,
             difficulty: "Medium",
+            tags: ["adapted", "pantry-friendly"],
             ingredients: Array(fallbackRecipeIngredients),
             instructions: instructions,
-            tags: ["adapted", "pantry-friendly"],
-            fatSecretRecipeId: originalRecipe.recipe_id
         )
     }
     
@@ -520,11 +519,6 @@ class AIService: ObservableObject {
             return []
         }
     }
-}
-
-// MARK: - Supporting Types
-private struct RecipeResponse: Codable {
-    let recipe: Recipe
 }
 
 // MARK: - Error Handling

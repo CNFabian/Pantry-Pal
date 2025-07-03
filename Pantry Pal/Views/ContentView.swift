@@ -11,7 +11,7 @@ struct ContentView: View {
     @EnvironmentObject var ingredientCache: IngredientCacheService
     
     var body: some View {
-        Group {
+        ZStack {
             if authService.isLoading {
                 LoadingView()
             } else if authService.user != nil {
@@ -66,7 +66,7 @@ struct MainTabView: View {
                 }
             
             NavigationView {
-                ChatView()
+                GeminiChatView()
                     .navigationTitle("AI Chat")
             }
             .tabItem {

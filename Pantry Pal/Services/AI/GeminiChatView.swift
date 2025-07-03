@@ -17,7 +17,9 @@ struct GeminiChatView: View {
     @State private var scannedBarcode: String?
     @State private var messageText = ""
     
-    let ingredients = ingredientCache.getIngredients()
+    private var ingredients: [Ingredient] {
+        ingredientCache.getIngredients()
+    }
     
     var body: some View {
         NavigationView {
