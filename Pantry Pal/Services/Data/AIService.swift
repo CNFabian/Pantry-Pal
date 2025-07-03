@@ -148,6 +148,147 @@ class AIService: ObservableObject {
         return try parseRecipeJSON(text)
     }
     
+    // MARK: - Recipe Suggestions
+    func getRecipeSuggestions(
+        ingredients: [Ingredient],
+        mealType: String
+    ) async throws -> [String] {
+        print("🤖 AIService: Getting recipe suggestions for \(mealType)")
+        
+        let ingredientsText = formatIngredientsWithQuantities(ingredients)
+        
+        guard !ingredientsText.isEmpty else {
+            throw AIServiceError.noIngredientsAvailable
+        }
+        
+        let prompt = """
+        I have these ingredients in my kitchen with the following quantities:
+        \(ingredientsText)
+        
+        Suggest 5 \(mealType) recipes I can make with these EXACT quantities.
+        
+        CRITICAL REQUIREMENTS:
+        - Do NOT suggest recipes that require more of any ingredient than I have available
+        - Consider the quantities when suggesting recipes
+        - If an ingredient quantity is low, suggest recipes that use smaller amounts
+        - Adjust serving sizes based on available ingredient quantities
+        
+        IMPORTANT: I ONLY want the names of 5 recipes, numbered 1-5.
+        ONLY provide the recipe names, nothing else.
+        DO NOT include serving sizes, portion counts, or any text like "(serves X)" in the recipe names.
+        Just give me clean recipe names like "Chicken Stir Fry" NOT "Chicken Stir Fry (4 servings)".
+        No introductions, no descriptions, just a simple numbered list of 5 clean recipe names.
+        """
+        
+        let response = try await model.generateContent(prompt)
+        
+        guard let text = response.text else {
+            throw AIServiceError.noResponse
+        }
+        
+        // Parse the numbered list into an array of recipe names
+        let recipes = text.components(separatedBy: .newlines)
+            .compactMap { line in
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Remove numbering (1., 2., etc.) and extract just the recipe name
+                if trimmed.range(of: #"^\d+\.\s*"#, options: .regularExpression) != nil {
+                    return trimmed.replacingOccurrences(of: #"^\d+\.\s*"#, with: "", options: .regularExpression)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                return nil
+            }
+            .filter { !$0.isEmpty }
+        
+        print("🤖 AIService: Generated \(recipes.count) recipe suggestions")
+        return recipes
+    }
+
+    func getRecipeDetails(
+        recipeName: String,
+        ingredients: [Ingredient],
+        desiredServings: Int
+    ) async throws -> Recipe {
+        print("🤖 AIService: Getting recipe details for: \(recipeName)")
+        
+        // Clean the recipe name of any serving information
+        let cleanRecipeName = recipeName
+            .replacingOccurrences(of: #"\s*\(\d+\s*servings?\)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s*-\s*serves?\s*\d+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s*for\s*\d+\s*servings?"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s*\(\s*serves?\s*\d+\s*\)"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let ingredientsText = formatIngredientsWithQuantities(ingredients)
+        
+        guard !ingredientsText.isEmpty else {
+            throw AIServiceError.noIngredientsAvailable
+        }
+        
+        let prompt = """
+        I have these ingredients in my kitchen with EXACT quantities:
+        \(ingredientsText)
+        
+        Create a recipe for "\(cleanRecipeName)" using ONLY these ingredients with their available quantities.
+        The recipe should be designed for \(desiredServings) servings.
+        
+        CRITICAL REQUIREMENTS:
+        1. Use ONLY ingredients from the list above
+        2. NEVER exceed the available quantities
+        3. Scale the recipe to fit available ingredients if needed
+        4. The "quantity" field should be a number that DOES NOT EXCEED available amounts
+        5. The "unit" field should match or be convertible to available units
+        6. Include "actualYield" field to show adjusted serving size
+        7. Adjust cooking methods, temperatures, and times for \(desiredServings) servings
+        8. Add helpful tips that might not be obvious to beginners
+        9. Number steps sequentially, never skip numbers
+        10. Explicitly mention temperatures, timing and technique details
+        11. NEVER exceed available ingredient quantities
+        12. For each instruction, include "ingredients" array with ingredient names used in that step
+        13. For each instruction, include "equipment" array with tools/equipment used in that step
+        
+        Return EXACTLY this structure with no extra text:
+        {
+          "recipe": {
+            "name": "Recipe Name",
+            "description": "Brief description",
+            "prepTime": "X minutes",
+            "cookTime": "X minutes", 
+            "totalTime": "X minutes",
+            "servings": \(desiredServings),
+            "difficulty": "Easy/Medium/Hard",
+            "ingredients": [
+              {
+                "name": "ingredient name",
+                "quantity": number,
+                "unit": "unit",
+                "notes": "optional preparation notes"
+              }
+            ],
+            "instructions": [
+              {
+                "step": 1,
+                "instruction": "Detailed instruction text",
+                "time": "optional timing",
+                "temperature": "optional temperature",
+                "ingredients": ["ingredient1", "ingredient2"],
+                "equipment": ["tool1", "tool2"]
+              }
+            ],
+            "tags": ["tag1", "tag2"],
+            "cookingTools": ["tool1", "tool2"]
+          }
+        }
+        """
+        
+        let response = try await model.generateContent(prompt)
+        
+        guard let text = response.text else {
+            throw AIServiceError.noResponse
+        }
+        
+        return try parseRecipeJSON(text)
+    }
+    
     // MARK: - Recipe JSON Parsing
     private func parseRecipeJSON(_ jsonString: String) throws -> Recipe {
         print("🤖 AIService: Parsing recipe JSON")
