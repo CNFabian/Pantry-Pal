@@ -43,6 +43,7 @@ class FirestoreService: ObservableObject {
     private var notificationsListener: ListenerRegistration?
     private var historyListener: ListenerRegistration?
     private var authService: AuthenticationService?
+    private var ingredientCache: IngredientCacheService?
     
     init() {
         configureFirestore()
@@ -55,6 +56,10 @@ class FirestoreService: ObservableObject {
     // MARK: - AuthService Dependency Injection
     func setAuthService(_ authService: AuthenticationService) {
         self.authService = authService
+    }
+    
+    func setIngredientCache(_ cache: IngredientCacheService) {
+        self.ingredientCache = cache
     }
     
     // MARK: - Firestore Configuration
@@ -177,6 +182,11 @@ class FirestoreService: ObservableObject {
             DispatchQueue.main.async {
                 self.ingredients = loadedIngredients
                 self.isLoading = false
+                
+                // Update the cache
+                if let cache = self.ingredientCache {
+                    cache.initializeCache(for: userId, with: loadedIngredients)
+                }
             }
             
             print("✅ Loaded \(loadedIngredients.count) ingredients")
@@ -235,6 +245,11 @@ class FirestoreService: ObservableObject {
                     
                     DispatchQueue.main.async {
                         self.ingredients = ingredients
+                        
+                        if let cache = self.ingredientCache {
+                            cache.updateCache(with: ingredients)
+                        }
+                        
                         print("✅ Ingredients updated via listener: \(ingredients.count) items")
                     }
                 } catch {
@@ -255,6 +270,9 @@ class FirestoreService: ObservableObject {
         do {
             try ingredientRef.setData(from: ingredientWithId)
             print("✅ Ingredient added successfully")
+            Task { @MainActor in
+                self.ingredientCache?.addIngredient(validatedIngredient)
+            }
         } catch {
             print("❌ Error adding ingredient: \(error)")
             throw FirestoreError.saveFailed(error.localizedDescription)
@@ -297,6 +315,9 @@ class FirestoreService: ObservableObject {
             }
             
             print("✅ Ingredient updated successfully")
+            Task { @MainActor in
+                self.ingredientCache?.updateIngredient(ingredient)
+            }
         } catch {
             print("❌ Error updating ingredient: \(error)")
             throw FirestoreError.saveFailed(error.localizedDescription)
@@ -318,6 +339,9 @@ class FirestoreService: ObservableObject {
             ingredients.removeAll { $0.id == ingredientId }
             
             print("✅ Ingredient deleted successfully")
+            Task { @MainActor in
+                self.ingredientCache?.removeIngredient(withId: ingredientId)
+            }
         } catch {
             print("❌ Error deleting ingredient: \(error)")
             throw FirestoreError.deleteFailed(error.localizedDescription)

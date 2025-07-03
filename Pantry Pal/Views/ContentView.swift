@@ -5,107 +5,75 @@
 
 import SwiftUI
 
-struct LoadingView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            ProgressView()
-                .scaleEffect(1.5)
-                .tint(.primaryOrange)
-            
-            Text("Loading...")
-                .font(.headline)
-                .foregroundColor(.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .themedBackground()
-    }
-}
-
 struct ContentView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var firestoreService: FirestoreService
-    @State private var showingRegister = false
+    @EnvironmentObject var ingredientCache: IngredientCacheService
     
     var body: some View {
         Group {
             if authService.isLoading {
                 LoadingView()
-            } else if authService.isAuthenticated {
+            } else if authService.user != nil {
                 MainTabView()
             } else {
-                NavigationView {
-                    if showingRegister {
-                        RegisterView()
-                            .environmentObject(authService)
-                            .navigationBarBackButtonHidden(true)
-                            .onReceive(NotificationCenter.default.publisher(for: .showLogin)) { _ in
-                                   showingRegister = false
-                               }
-                            .toolbar {
-                                ToolbarItem(placement: .navigationBarLeading) {
-                                    Button("Back") {
-                                        showingRegister = false
-                                    }
-                                    .foregroundColor(.primaryOrange)
-                                }
-                            }
-                    } else {
-                        LoginView()
-                            .environmentObject(authService)
-                            .onReceive(NotificationCenter.default.publisher(for: .showRegister)) { _ in
-                                showingRegister = true
-                            }
-                    }
-                }
+                AuthenticationView()
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: authService.isLoading)
+        .animation(.easeInOut(duration: 0.3), value: authService.user != nil)
     }
 }
 
-// Add this extension to handle navigation
-extension Notification.Name {
-    static let showRegister = Notification.Name("showRegister")
-    static let showLogin = Notification.Name("showLogin")
+struct LoadingView: View {
+    var body: some View {
+        ZStack {
+            Color.backgroundPrimary
+                .ignoresSafeArea()
+            
+            VStack(spacing: 20) {
+                ProgressView()
+                    .scaleEffect(1.5)
+                    .progressViewStyle(CircularProgressViewStyle(tint: .primaryOrange))
+                
+                Text("Loading Pantry Pal...")
+                    .font(.headline)
+                    .foregroundColor(.textPrimary)
+            }
+        }
+    }
 }
 
 struct MainTabView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var fatSecretService: FatSecretService
+    @EnvironmentObject var ingredientCache: IngredientCacheService
     @StateObject private var geminiService = GeminiService()
     
     var body: some View {
         TabView {
             IngredientsListView()
                 .tabItem {
-                    Image(systemName: "carrot.fill")
+                    Image(systemName: "list.bullet")
                     Text("Pantry")
                 }
             
-            AddIngredientView()
+            RecipesView()
                 .tabItem {
-                    Image(systemName: "plus.circle.fill")
-                    Text("Add")
+                    Image(systemName: "book.fill")
+                    Text("Recipes")
                 }
             
-            RecipeGeneratorView()
-                .tabItem {
-                    Image(systemName: "wand.and.stars")
-                    Text("Generate")
-                }
-            
-            SavedRecipesView()
-                    .tabItem {
-                        Image(systemName: "book.fill")
-                        Text("Recipes")
-                    }
-            GeminiChatView()
-                .environmentObject(geminiService)
-                .tabItem {
-                    Image(systemName: "message.circle.fill")
-                    Text("AI Chat")
-                }
-                .environmentObject(fatSecretService) // Make sure to pass your FatSecret service
+            NavigationView {
+                ChatView()
+                    .navigationTitle("AI Chat")
+            }
+            .tabItem {
+                Image(systemName: "message.fill")
+                Text("AI Chat")
+            }
+            .environmentObject(fatSecretService) // Make sure to pass your FatSecret service
             
             NotificationsView()
                 .tabItem {
@@ -136,6 +104,9 @@ struct MainTabView: View {
         guard let userId = authService.user?.id else { return }
         
         Task {
+            // Clear cache when switching users
+            await ingredientCache.clearCache()
+            
             await firestoreService.loadIngredients(for: userId)
             await firestoreService.loadRecipes(for: userId)
             await firestoreService.loadNotifications(for: userId)

@@ -10,10 +10,14 @@ struct GeminiChatView: View {
     @EnvironmentObject var fatSecretService: FatSecretService
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var authService: AuthenticationService
+    @EnvironmentObject var ingredientCache: IngredientCacheService
+
     
     @State private var showingBarcodeScanner = false
     @State private var scannedBarcode: String?
     @State private var messageText = ""
+    
+    let ingredients = ingredientCache.getIngredients()
     
     var body: some View {
         NavigationView {
