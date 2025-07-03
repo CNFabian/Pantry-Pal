@@ -306,18 +306,14 @@ struct GeminiChatView: View {
     }
 }
 
-// Add these extensions at the very end of the file, outside of any struct
-extension Double {
-    var isValidForUI: Bool {
-        return !isNaN && !isInfinite && isFinite
-    }
-    
-    var safeForUI: Double {
-        return isValidForUI ? self : 0.0
-    }
+protocol UIValidatable {
+    var isValidForUI: Bool { get }
+    associatedtype SafeType
+    var safeForUI: SafeType { get }
 }
 
-extension CGFloat {
+
+extension CGFloat: UIValidatable {
     var isValidForUI: Bool {
         return !isNaN && !isInfinite && isFinite
     }

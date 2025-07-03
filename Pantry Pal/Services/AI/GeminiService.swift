@@ -387,7 +387,7 @@ class GeminiService: NSObject, ObservableObject {
                         quantity: quantity ?? existingIngredient.quantity,
                         unit: unit ?? existingIngredient.unit,
                         category: category ?? existingIngredient.category,
-                        expirationDate: expirationDate?.map { Timestamp(date: $0) } ?? existingIngredient.expirationDate,
+                        expirationDate: expirationDate.map { Timestamp(date: $0) } ?? existingIngredient.expirationDate,
                         dateAdded: existingIngredient.dateAdded,
                         notes: existingIngredient.notes,
                         inTrash: existingIngredient.inTrash,
@@ -417,7 +417,7 @@ class GeminiService: NSObject, ObservableObject {
                 
             case .deleteIngredient(let name):
                 if let existingIngredient = await findIngredientByName(name, firestoreService: firestoreService) {
-                    try await firestoreService.moveToTrash(existingIngredient)
+                    try await firestoreService.moveToTrash(ingredientId: existingIngredient.id!, userId: userId)
                     
                     let successMessage = "I've moved \(name) to the trash for you! 🗑️"
                     let aiMessage = ChatMessage(text: successMessage, isUser: false, timestamp: Date())
@@ -478,8 +478,8 @@ class GeminiService: NSObject, ObservableObject {
         guard let userId = authService?.user?.id else { return nil }
         
         do {
-            let ingredients = try await firestoreService.fetchIngredients(for: userId)
-            return ingredients.first { ingredient in
+            await firestoreService.loadIngredients(for: userId)
+            return firestoreService.ingredients.first { ingredient in
                 ingredient.name.lowercased() == name.lowercased() && !ingredient.inTrash
             }
         } catch {
@@ -813,16 +813,6 @@ extension GeminiService: AVSpeechSynthesizerDelegate {
 extension Double {
     var isValidForUI: Bool {
         return !isNaN && !isInfinite && isFinite
-    }
-    
-    var safeFormattedString: String {
-        guard isValidForUI else { return "0" }
-        
-        if self.truncatingRemainder(dividingBy: 1) == 0 {
-            return String(Int(self))
-        } else {
-            return String(format: "%.1f", self)
-        }
     }
 }
 

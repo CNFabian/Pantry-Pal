@@ -13,7 +13,7 @@ class SettingsService: ObservableObject {
     @Published var userSettings: UserSettings?
     @Published var isLoading = false
     
-    private var settingsListener: ListenerRegistration?
+    nonisolated(unsafe) private var settingsListener: ListenerRegistration?
     weak var authService: AuthenticationService?
     
     func setAuthService(_ authService: AuthenticationService) {
@@ -95,8 +95,9 @@ class SettingsService: ObservableObject {
         settingsListener?.remove()
         settingsListener = nil
     }
-    
+
     deinit {
-        stopListening()
+        settingsListener?.remove()
+        settingsListener = nil
     }
 }
