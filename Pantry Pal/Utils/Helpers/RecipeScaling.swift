@@ -62,15 +62,17 @@ extension Recipe {
     
     /// Format scaled quantities to reasonable precision
     private func formatScaledQuantity(_ quantity: Double) -> Double {
+        let safeQuantity = quantity.safeForCoreGraphics
+        
         // Round to reasonable precision based on the size
-        if quantity < 0.1 {
-            return (quantity * 100).rounded() / 100  // Round to nearest 0.01
-        } else if quantity < 1 {
-            return (quantity * 10).rounded() / 10    // Round to nearest 0.1
-        } else if quantity < 10 {
-            return (quantity * 4).rounded() / 4      // Round to nearest 0.25
+        if safeQuantity < 0.1 {
+            return ((safeQuantity * 100).rounded() / 100).safeForCoreGraphics
+        } else if safeQuantity < 1 {
+            return ((safeQuantity * 10).rounded() / 10).safeForCoreGraphics
+        } else if safeQuantity < 10 {
+            return ((safeQuantity * 4).rounded() / 4).safeForCoreGraphics
         } else {
-            return quantity.rounded()                 // Round to nearest whole number
+            return safeQuantity.rounded().safeForCoreGraphics
         }
     }
 }

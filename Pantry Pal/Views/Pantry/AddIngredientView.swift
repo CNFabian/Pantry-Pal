@@ -275,7 +275,7 @@ struct AddIngredientView: View {
             HStack {
                 if isLoading {
                     ProgressView()
-                        .scaleEffect(0.8)
+                        .scaleEffect(0.8.safeForCoreGraphics)
                         .tint(.white)
                 } else {
                     Image(systemName: "plus")

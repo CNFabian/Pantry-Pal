@@ -185,7 +185,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .background(
                 RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
                     .fill(Color.primaryOrange)
-                    .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+                    .scaleEffect((configuration.isPressed ? 0.95 : 1.0).safeForCoreGraphics)
             )
     }
 }

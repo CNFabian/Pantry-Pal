@@ -75,8 +75,8 @@ struct SavedRecipesView: View {
                 .disabled(selectedServingSize <= 1)
                 
                 Slider(value: Binding(
-                    get: { Double(selectedServingSize) },
-                    set: { selectedServingSize = Int($0.rounded()) }
+                    get: { Double(selectedServingSize).safeForCoreGraphics },
+                    set: { selectedServingSize = Int($0.rounded().safeForCoreGraphics) }
                 ), in: 1...12, step: 1)
                 .accentColor(.primaryOrange)
                 

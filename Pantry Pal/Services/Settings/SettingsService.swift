@@ -130,45 +130,48 @@ class SettingsService: ObservableObject {
         settingsListener = db.collection("userSettings")
             .document(userId)
             .addSnapshotListener { [weak self] document, error in
-                if let error = error {
-                    print("❌ SettingsService: Listener error: \(error)")
-                    
-                    // Enhanced error handling for listener
-                    if let firestoreError = error as NSError?,
-                       firestoreError.domain == "FIRFirestoreErrorDomain" {
+                // Ensure main thread execution for @Published property updates
+                Task { @MainActor in
+                    if let error = error {
+                        print("❌ SettingsService: Listener error: \(error)")
                         
-                        switch firestoreError.code {
-                        case 7: // Permission denied
-                            print("🚫 SettingsService: Listener permission denied - check security rules")
-                        case 14: // Unavailable
-                            print("🌐 SettingsService: Listener network unavailable")
-                        default:
-                            print("🔍 SettingsService: Listener error code: \(firestoreError.code)")
+                        // Enhanced error handling for listener
+                        if let firestoreError = error as NSError?,
+                           firestoreError.domain == "FIRFirestoreErrorDomain" {
+                            
+                            switch firestoreError.code {
+                            case 7: // Permission denied
+                                print("🚫 SettingsService: Listener permission denied - check security rules")
+                            case 14: // Unavailable
+                                print("🌐 SettingsService: Listener network unavailable")
+                            default:
+                                print("🔍 SettingsService: Listener error code: \(firestoreError.code)")
+                            }
                         }
+                        return
                     }
-                    return
-                }
-                
-                guard let document = document else {
-                    print("⚠️ SettingsService: No document in listener callback")
-                    return
-                }
-                
-                do {
-                    if document.exists {
-                        self?.userSettings = try document.data(as: UserSettings.self)
-                        print("🔄 SettingsService: Settings updated from listener")
-                    } else {
-                        print("📄 SettingsService: Settings document deleted, using defaults")
+                    
+                    guard let document = document else {
+                        print("⚠️ SettingsService: No document in listener callback")
+                        return
+                    }
+                    
+                    do {
+                        if document.exists {
+                            self?.userSettings = try document.data(as: UserSettings.self)
+                            print("🔄 SettingsService: Settings updated from listener")
+                        } else {
+                            print("📄 SettingsService: Settings document deleted, using defaults")
+                            if let userId = self?.authService?.user?.id {
+                                self?.userSettings = UserSettings.default(for: userId)
+                            }
+                        }
+                    } catch {
+                        print("❌ SettingsService: Error decoding settings from listener: \(error)")
+                        // Use default settings if decoding fails
                         if let userId = self?.authService?.user?.id {
                             self?.userSettings = UserSettings.default(for: userId)
                         }
-                    }
-                } catch {
-                    print("❌ SettingsService: Error decoding settings from listener: \(error)")
-                    // Use default settings if decoding fails
-                    if let userId = self?.authService?.user?.id {
-                        self?.userSettings = UserSettings.default(for: userId)
                     }
                 }
             }

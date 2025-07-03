@@ -97,8 +97,8 @@ struct TypingIndicator: View {
                     Circle()
                         .fill(Color.textSecondary)
                         .frame(width: 8, height: 8)
-                        .scaleEffect(animationPhase == index ? 1.2 : 0.8)
-                        .opacity(animationPhase == index ? 1.0 : 0.6)
+                        .scaleEffect((animationPhase == index ? 1.2 : 0.8).safeForCoreGraphics)
+                        .opacity((animationPhase == index ? 1.0 : 0.6).safeForCoreGraphics)
                 }
             }
             .padding(.horizontal, Constants.Design.standardPadding)
