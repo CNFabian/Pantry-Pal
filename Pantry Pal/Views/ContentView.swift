@@ -49,59 +49,20 @@ struct MainTabView: View {
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var fatSecretService: FatSecretService
     @EnvironmentObject var ingredientCache: IngredientCacheService
-    @EnvironmentObject var settingsService: SettingsService  // Add this line
-    @StateObject private var geminiService = GeminiService()
+    @EnvironmentObject var settingsService: SettingsService
     
     var body: some View {
-        TabView {
-            IngredientsListView()
-                .tabItem {
-                    Image(systemName: "list.bullet")
-                    Text("Pantry")
-                }
-            
-            RecipesView()
-                .tabItem {
-                    Image(systemName: "book.fill")
-                    Text("Recipes")
-                }
-            
-            NavigationView {
-                GeminiChatView()
-                    .navigationTitle("AI Chat")
-            }
-            .tabItem {
-                Image(systemName: "message.fill")
-                Text("AI Chat")
-            }
-            .environmentObject(fatSecretService)
-            .environmentObject(settingsService)  // Add this line
-            
-            NotificationsView()
-                .tabItem {
-                    Image(systemName: "bell.fill")
-                    Text("Alerts")
-                }
-            
-            ProfileView()
-                .tabItem {
-                    Image(systemName: "person.fill")
-                    Text("Profile")
-                }
-        }
-        .accentColor(.primaryOrange)
-        .onAppear {
-            geminiService.configure(firestoreService: firestoreService, authService: authService)
-            geminiService.setSettingsService(settingsService)  // Add this line
-            loadInitialData()
-            print("🐛 DEBUG: MainTabView appeared")
-            if let userId = authService.user?.id {
-                Task {
-                    await firestoreService.loadIngredients(for: userId)
-                    await settingsService.loadUserSettings()  // Add this line
+        GestureNavigationView()
+            .onAppear {
+                loadInitialData()
+                print("🐛 DEBUG: GestureNavigationView appeared")
+                if let userId = authService.user?.id {
+                    Task {
+                        await firestoreService.loadIngredients(for: userId)
+                        await settingsService.loadUserSettings()
+                    }
                 }
             }
-        }
     }
     
     private func loadInitialData() {
@@ -114,7 +75,7 @@ struct MainTabView: View {
             await firestoreService.loadIngredients(for: userId)
             await firestoreService.loadRecipes(for: userId)
             await firestoreService.loadNotifications(for: userId)
-            await settingsService.loadUserSettings()  // Add this line
+            await settingsService.loadUserSettings()
         }
     }
 }

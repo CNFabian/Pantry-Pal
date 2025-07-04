@@ -52,6 +52,10 @@ struct GeminiChatView: View {
                             geminiService.clearConversation()
                         }
                         
+                        Button("Settings") {
+                            showSettings = true
+                        }
+                        
                         Button(geminiService.isSpeaking ? "Stop Speaking" : "Start Speaking") {
                             if geminiService.isSpeaking {
                                 geminiService.stopSpeaking()
@@ -73,8 +77,19 @@ struct GeminiChatView: View {
                 BarcodeScannerView(scannedCode: $scannedBarcode, isPresented: $showingBarcodeScanner)
             }
             .sheet(isPresented: $showSettings) {
-                SettingsView()
-                    .environmentObject(settingsService)
+                NavigationView {
+                    SettingsView(settingsType: .aiChat)
+                        .navigationTitle("AI Chat Settings")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Done") {
+                                    showSettings = false
+                                }
+                                .foregroundColor(.primaryOrange)
+                            }
+                        }
+                }
             }
             .onChange(of: scannedBarcode) { _, newBarcode in
                 if let barcode = newBarcode {
@@ -208,45 +223,7 @@ struct GeminiChatView: View {
         }
     }
     
-    private var welcomeMessage: some View {
-        VStack(spacing: Constants.Design.standardPadding) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.primaryOrange)
-            
-            Text("Hey there, food lover!")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.textPrimary)
-            
-            Text("I'm your AI pantry assistant! 🍽️\nAsk me about recipes, ingredients, or just chat about food!")
-                .font(.body)
-                .foregroundColor(.textSecondary)
-                .multilineTextAlignment(.center)
-                .lineLimit(nil)
-            
-            VStack(spacing: Constants.Design.smallPadding) {
-                Text("Try saying:")
-                    .font(.caption)
-                    .foregroundColor(.textSecondary)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("• \"What can I cook with chicken and rice?\"")
-                    Text("• \"How long do tomatoes last?\"")
-                    Text("• \"Suggest a healthy breakfast\"")
-                }
-                .font(.caption)
-                .foregroundColor(.textSecondary)
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
-                    .fill(Color(.systemGray6))
-            )
-        }
-        .padding(Constants.Design.standardPadding)
-    }
-    
+
     private var inputControlsArea: some View {
         VStack(spacing: Constants.Design.smallPadding) {
             // Voice button
@@ -257,6 +234,66 @@ struct GeminiChatView: View {
         }
         .padding(Constants.Design.standardPadding)
         .background(Color(.systemBackground))
+    }
+    
+    private var welcomeMessage: some View {
+        VStack(spacing: Constants.Design.standardPadding) {
+            Image(systemName: "waveform.circle.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.primaryOrange)
+            
+            Text("Welcome to Pantry Pal! 🍽️")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.textPrimary)
+            
+            Text("I'm your AI pantry assistant! Ask me about recipes, ingredients, or just chat about food!")
+                .font(.body)
+                .foregroundColor(.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Constants.Design.standardPadding)
+            
+            VStack(spacing: 8) {
+                Text("Try swiping:")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.textPrimary)
+                
+                HStack(spacing: 16) {
+                    SwipeHintView(direction: "←", label: "Recipes")
+                    SwipeHintView(direction: "→", label: "Profile")
+                    SwipeHintView(direction: "↑", label: "Pantry")
+                }
+            }
+            .padding(.top, Constants.Design.standardPadding)
+        }
+        .padding(Constants.Design.largePadding)
+        .background(
+            RoundedRectangle(cornerRadius: Constants.Design.cornerRadius)
+                .fill(Color(.systemGray6))
+        )
+    }
+
+    struct SwipeHintView: View {
+        let direction: String
+        let label: String
+        
+        var body: some View {
+            VStack(spacing: 4) {
+                Text(direction)
+                    .font(.title2)
+                    .foregroundColor(.primaryOrange)
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(.systemGray5))
+            )
+        }
     }
     
     private var voiceButton: some View {
