@@ -201,7 +201,7 @@ struct GeminiChatView: View {
                     }
                     
                     // Chat messages
-                    ForEach(geminiService.conversationHistory) { message in
+                    ForEach(Array(geminiService.conversationHistory.enumerated()), id: \.offset) { index, message in
                         ChatBubble(message: message)
                     }
                     

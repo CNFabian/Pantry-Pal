@@ -269,7 +269,7 @@ struct RecipeGeneratorView: View {
     // MARK: - Generation Functions
     private func generateRecipes() {
         // Capture ingredients before entering async context
-        let availableIngredients = ingredients
+        let availableIngredients = self.availableIngredients
         
         guard !availableIngredients.isEmpty else {
             errorMessage = "Please add ingredients to your pantry first"
@@ -295,7 +295,7 @@ struct RecipeGeneratorView: View {
     
     private func generateRecipeDetails() {
         // Capture ingredients before entering async context
-        let availableIngredients = ingredients
+        let availableIngredients = self.availableIngredients
         
         Task {
             let recipe = await recipeService.generateRecipeDetails(
