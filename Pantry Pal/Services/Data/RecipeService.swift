@@ -65,7 +65,10 @@ class RecipeService: ObservableObject {
                 .getDocuments()
             
             let recipes = try snapshot.documents.compactMap { document in
-                try document.data(as: Recipe.self)
+                var recipe = try document.data(as: Recipe.self)
+                // Ensure the document ID is properly set
+                recipe.id = document.documentID
+                return recipe
             }
             
             print("✅ RecipeService: Fetched \(recipes.count) recipes")
@@ -139,7 +142,10 @@ class RecipeService: ObservableObject {
                     
                     do {
                         let recipes = try documents.compactMap { document in
-                            try document.data(as: Recipe.self)
+                            var recipe = try document.data(as: Recipe.self)
+                            // Ensure the document ID is properly set
+                            recipe.id = document.documentID
+                            return recipe
                         }
                         
                         print("📱 RecipeService: Real-time update - \(recipes.count) recipes")
