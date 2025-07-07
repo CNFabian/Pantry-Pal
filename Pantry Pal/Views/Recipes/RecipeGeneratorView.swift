@@ -91,6 +91,11 @@ struct RecipeGeneratorView: View {
             } message: {
                 Text("Recipe has been saved to your collection!")
             }
+            .onAppear {
+                if let userId = authService.user?.id {
+                    recipeService.setCurrentUser(userId)
+                }
+            }
         }
     }
     
@@ -263,62 +268,48 @@ struct RecipeGeneratorView: View {
     
     // MARK: - Generation Functions
     private func generateRecipes() {
+        // Capture ingredients before entering async context
+        let availableIngredients = ingredients
+        
+        guard !availableIngredients.isEmpty else {
+            errorMessage = "Please add ingredients to your pantry first"
+            return
+        }
+        
         Task {
-            isGenerating = true
-            do {
-                print("🍳 RecipeGenerator: Starting recipe generation for meal type: \(selectedMealType)")
-                
-                let recipes = try await aiService.getRecipeSuggestions(
-                    ingredients: availableIngredients,
-                    mealType: selectedMealType
-                )
-                
-                print("🍳 RecipeGenerator: Generated \(recipes.count) recipe options")
-                
-                await MainActor.run {
-                    self.recipeOptions = recipes
-                    self.currentStep = .selectRecipe
-                    self.isGenerating = false
-                }
-                
-            } catch {
-                print("🍳 RecipeGenerator: Error in generateRecipes: \(error)")
-                await MainActor.run {
-                    self.errorMessage = error.localizedDescription
-                    self.showingError = true
-                    self.isGenerating = false
+            let suggestions = await recipeService.generateRecipes(
+                mealType: selectedMealType,
+                ingredients: availableIngredients  // ← Use captured value
+            )
+            
+            await MainActor.run {
+                if !suggestions.isEmpty {
+                    recipeOptions = suggestions
+                    currentStep = .selectRecipe
+                } else {
+                    errorMessage = recipeService.errorMessage ?? "Failed to generate recipes"
                 }
             }
         }
     }
     
     private func generateRecipeDetails() {
+        // Capture ingredients before entering async context
+        let availableIngredients = ingredients
+        
         Task {
-            isGenerating = true
-            do {
-                print("🍳 RecipeGenerator: Generating detailed recipe for: \(selectedRecipeName)")
-                
-                let recipe = try await aiService.getRecipeDetails(
-                    recipeName: selectedRecipeName,
-                    ingredients: availableIngredients,
-                    desiredServings: desiredServings
-                )
-                
-                print("🍳 RecipeGenerator: Successfully generated recipe: \(recipe.name)")
-                
-                await MainActor.run {
-                    self.generatedRecipe = recipe
-                    self.currentStep = .viewRecipe
-                    self.isGenerating = false
-                    print("🍳 RecipeGenerator: Recipe generation completed successfully")
-                }
-                
-            } catch {
-                print("🍳 RecipeGenerator: Error in generateRecipeDetails: \(error)")
-                await MainActor.run {
-                    self.errorMessage = error.localizedDescription
-                    self.showingError = true
-                    self.isGenerating = false
+            let recipe = await recipeService.generateRecipeDetails(
+                recipeName: selectedRecipeName,
+                ingredients: availableIngredients,  // ← Use captured value
+                servings: desiredServings
+            )
+            
+            await MainActor.run {
+                if let recipe = recipe {
+                    generatedRecipe = recipe
+                    currentStep = .viewRecipe
+                } else {
+                    errorMessage = recipeService.errorMessage ?? "Failed to generate recipe details"
                 }
             }
         }
