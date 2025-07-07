@@ -10,6 +10,7 @@ struct ContentView: View {
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var ingredientCache: IngredientCacheService
     
+    
     var body: some View {
         ZStack {
             if authService.isLoading {
@@ -49,8 +50,10 @@ struct MainTabView: View {
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var fatSecretService: FatSecretService
     @EnvironmentObject var ingredientCache: IngredientCacheService
-    @EnvironmentObject var settingsService: SettingsService  // Add this line
+    @EnvironmentObject var settingsService: SettingsService
+    @EnvironmentObject var recipeService: RecipeService
     @StateObject private var geminiService = GeminiService()
+    
     
     var body: some View {
         TabView {
@@ -96,11 +99,15 @@ struct MainTabView: View {
             loadInitialData()
             print("🐛 DEBUG: MainTabView appeared")
             if let userId = authService.user?.id {
-                Task {
-                    await firestoreService.loadIngredients(for: userId)
-                    await settingsService.loadUserSettings()  // Add this line
+                    Task {
+                        await firestoreService.loadIngredients(for: userId)
+                        await firestoreService.loadRecipes(for: userId)
+                        await firestoreService.loadNotifications(for: userId)
+                        await settingsService.loadUserSettings()
+                        
+                        recipeService.startListening()
+                    }
                 }
-            }
         }
     }
     

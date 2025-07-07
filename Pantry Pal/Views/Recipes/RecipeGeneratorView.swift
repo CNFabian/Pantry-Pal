@@ -10,7 +10,7 @@ struct RecipeGeneratorView: View {
     @EnvironmentObject var firestoreService: FirestoreService
     @StateObject private var fatSecretService = FatSecretService()
     @StateObject private var aiService = AIService()
-    @StateObject private var recipeService = RecipeService()
+    @EnvironmentObject var recipeService: RecipeService
     
     @State private var selectedMealType = "dinner"
     @State private var desiredServings = 4
@@ -44,7 +44,6 @@ struct RecipeGeneratorView: View {
                         recipeSelectionView
                     case .viewRecipe:
                         if let recipe = generatedRecipe {
-                            // Show full recipe detail view directly
                             GeneratedRecipeDetailView(
                                 recipe: recipe,
                                 onSaveRecipe: {
@@ -268,25 +267,48 @@ struct RecipeGeneratorView: View {
             do {
                 print("🍳 RecipeGenerator: Starting recipe generation for meal type: \(selectedMealType)")
                 
+                // Ensure we have ingredients
+                let ingredients = availableIngredients
+                print("🍳 RecipeGenerator: Available ingredients count: \(ingredients.count)")
+                
+                if ingredients.isEmpty {
+                    print("⚠️ RecipeGenerator: No ingredients available")
+                    await MainActor.run {
+                        errorMessage = "No ingredients available in your pantry. Please add some ingredients first."
+                        showingError = true
+                        isGenerating = false
+                    }
+                    return
+                }
+                
+                // Debug: Print ingredient details
+                for ingredient in ingredients.prefix(5) {
+                    print("🍳 RecipeGenerator: Ingredient: \(ingredient.name) - \(ingredient.quantity) \(ingredient.unit)")
+                }
+                
                 let recipes = try await aiService.getRecipeSuggestions(
-                    ingredients: availableIngredients,
+                    ingredients: ingredients,
                     mealType: selectedMealType
                 )
                 
                 print("🍳 RecipeGenerator: Generated \(recipes.count) recipe options")
                 
                 await MainActor.run {
-                    self.recipeOptions = recipes
-                    self.currentStep = .selectRecipe
-                    self.isGenerating = false
+                    if recipes.isEmpty {
+                        errorMessage = "Could not generate recipes with your available ingredients. Please try adding more ingredients or try again later."
+                        showingError = true
+                    } else {
+                        recipeOptions = recipes
+                        currentStep = .selectRecipe
+                    }
+                    isGenerating = false
                 }
-                
             } catch {
-                print("🍳 RecipeGenerator: Error in generateRecipes: \(error)")
+                print("❌ RecipeGenerator: Error generating recipes: \(error)")
                 await MainActor.run {
-                    self.errorMessage = error.localizedDescription
-                    self.showingError = true
-                    self.isGenerating = false
+                    errorMessage = error.localizedDescription
+                    showingError = true
+                    isGenerating = false
                 }
             }
         }

@@ -16,9 +16,12 @@ class AIService: ObservableObject {
     init() {
         guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
               let plist = NSDictionary(contentsOfFile: path),
-              let apiKey = plist["GEMINI_API_KEY"] as? String else {
+              let apiKey = plist["GEMINI_API_KEY"] as? String,
+              !apiKey.isEmpty else {
             fatalError("Couldn't load GEMINI_API_KEY from GoogleService-Info.plist")
         }
+        
+        print("✅ AIService: Initializing with API key: \(apiKey.prefix(10))...")
         
         model = GenerativeModel(
             name: "gemini-1.5-flash",
@@ -28,11 +31,10 @@ class AIService: ObservableObject {
                 topP: 0.8,
                 topK: 40,
                 maxOutputTokens: 2048,
-                responseMIMEType: "application/json"
+                responseMIMEType: "text/plain" // Changed from application/json to text/plain
             )
         )
     }
-    
     // MARK: - Ingredient Cache Methods
     private func getIngredientsFromCache() -> [Ingredient] {
         if ingredientCache.isCacheReady() {
@@ -155,11 +157,15 @@ class AIService: ObservableObject {
     ) async throws -> [String] {
         print("🤖 AIService: Getting recipe suggestions for \(mealType)")
         
+        // Use passed ingredients instead of relying on cache
         let ingredientsText = formatIngredientsWithQuantities(ingredients)
         
         guard !ingredientsText.isEmpty else {
+            print("❌ AIService: No ingredients provided")
             throw AIServiceError.noIngredientsAvailable
         }
+        
+        print("🤖 AIService: Using ingredients: \(ingredientsText)")
         
         let prompt = """
         I have these ingredients in my kitchen with the following quantities:
@@ -180,27 +186,93 @@ class AIService: ObservableObject {
         No introductions, no descriptions, just a simple numbered list of 5 clean recipe names.
         """
         
-        let response = try await model.generateContent(prompt)
+        print("🤖 AIService: Sending prompt to Gemini...")
         
-        guard let text = response.text else {
-            throw AIServiceError.noResponse
-        }
-        
-        // Parse the numbered list into an array of recipe names
-        let recipes = text.components(separatedBy: .newlines)
-            .compactMap { line in
-                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                // Remove numbering (1., 2., etc.) and extract just the recipe name
-                if trimmed.range(of: #"^\d+\.\s*"#, options: .regularExpression) != nil {
-                    return trimmed.replacingOccurrences(of: #"^\d+\.\s*"#, with: "", options: .regularExpression)
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                return nil
+        do {
+            let response = try await model.generateContent(prompt)
+            
+            guard let text = response.text else {
+                print("❌ AIService: No response text received")
+                throw AIServiceError.noResponse
             }
-            .filter { !$0.isEmpty }
+            
+            print("🤖 AIService: Raw response: \(text)")
+            
+            // Parse the numbered list into an array of recipe names
+            let recipes = text.components(separatedBy: .newlines)
+                .compactMap { line in
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Remove numbering (1., 2., etc.) and extract just the recipe name
+                    if trimmed.range(of: #"^\d+\.\s*"#, options: .regularExpression) != nil {
+                        return trimmed.replacingOccurrences(of: #"^\d+\.\s*"#, with: "", options: .regularExpression)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    // Also handle cases without numbering
+                    else if !trimmed.isEmpty {
+                        return trimmed
+                    }
+                    return nil
+                }
+                .filter { !$0.isEmpty }
+            
+            print("🤖 AIService: Generated \(recipes.count) recipe suggestions: \(recipes)")
+            
+            // If we got no recipes, provide fallback suggestions
+            if recipes.isEmpty {
+                print("⚠️ AIService: No recipes parsed, providing fallbacks")
+                return getBasicRecipeFallbacks(for: mealType, ingredients: ingredients)
+            }
+            
+            return recipes
+        } catch {
+            print("❌ AIService: Error in getRecipeSuggestions: \(error)")
+            
+            // Provide fallback recipes if API fails
+            return getBasicRecipeFallbacks(for: mealType, ingredients: ingredients)
+        }
+    }
+    
+    private func getBasicRecipeFallbacks(for mealType: String, ingredients: [Ingredient]) -> [String] {
+        print("🔄 AIService: Generating fallback recipes for \(mealType)")
         
-        print("🤖 AIService: Generated \(recipes.count) recipe suggestions")
-        return recipes
+        let hasProtein = ingredients.contains { ["chicken", "beef", "pork", "fish", "tofu", "eggs"].contains($0.name.lowercased()) }
+        let hasVeggies = ingredients.contains { ["onion", "tomato", "carrot", "pepper", "spinach", "broccoli"].contains($0.name.lowercased()) }
+        let hasGrains = ingredients.contains { ["rice", "pasta", "bread", "oats", "quinoa"].contains($0.name.lowercased()) }
+        
+        switch mealType.lowercased() {
+        case "breakfast":
+            return [
+                hasGrains ? "Simple Toast" : "Basic Scramble",
+                "Quick Breakfast Bowl",
+                "Easy Morning Mix",
+                "Simple Breakfast",
+                "Basic Morning Meal"
+            ]
+        case "lunch":
+            return [
+                hasProtein ? "Simple Protein Bowl" : "Quick Salad",
+                "Easy Lunch Mix",
+                "Simple Sandwich",
+                "Quick Lunch Bowl",
+                "Basic Lunch"
+            ]
+        case "dinner":
+            return [
+                hasProtein ? "Simple Protein Dinner" : "Vegetable Bowl",
+                "Easy Dinner Mix",
+                "Quick Stir Fry",
+                "Simple Dinner",
+                "Basic Evening Meal"
+            ]
+        default:
+            return [
+                "Simple Mix",
+                "Easy Combination",
+                "Quick Blend",
+                "Basic Recipe",
+                "Simple Dish"
+            ]
+        }
     }
 
     func getRecipeDetails(
@@ -246,7 +318,9 @@ class AIService: ObservableObject {
         12. For each instruction, include "ingredients" array with ingredient names used in that step
         13. For each instruction, include "equipment" array with tools/equipment used in that step
         
-        Return EXACTLY this structure with no extra text:
+        YOU MUST RESPOND WITH VALID JSON ONLY, with no text before or after. Do not include markdown code blocks.
+        
+        The JSON must follow this EXACT structure:
         {
           "recipe": {
             "name": "Recipe Name",
@@ -259,34 +333,43 @@ class AIService: ObservableObject {
             "ingredients": [
               {
                 "name": "ingredient name",
-                "quantity": number,
+                "quantity": 1.0,
                 "unit": "unit",
-                "notes": "optional preparation notes"
+                "preparation": "optional preparation notes"
               }
             ],
             "instructions": [
               {
-                "step": 1,
+                "stepNumber": 1,
                 "instruction": "Detailed instruction text",
-                "time": "optional timing",
-                "temperature": "optional temperature",
+                "duration": 5,
+                "tip": "Helpful tip",
                 "ingredients": ["ingredient1", "ingredient2"],
                 "equipment": ["tool1", "tool2"]
               }
             ],
-            "tags": ["tag1", "tag2"],
+            "tags": ["tag1", "tag2", "tag3"],
             "cookingTools": ["tool1", "tool2"]
           }
         }
+        
+        IMPORTANT: Use "stepNumber" NOT "step" for the step number field in instructions.
+        IMPORTANT: Use "preparation" NOT "notes" for ingredient preparation notes.
+        IMPORTANT: Use "duration" NOT "time" for instruction timing.
         """
         
-        let response = try await model.generateContent(prompt)
-        
-        guard let text = response.text else {
-            throw AIServiceError.noResponse
+        do {
+            let response = try await model.generateContent(prompt)
+            
+            guard let text = response.text else {
+                throw AIServiceError.noResponse
+            }
+            
+            return try parseRecipeJSON(text)
+        } catch {
+            print("❌ AIService: Error in getRecipeDetails: \(error)")
+            throw error
         }
-        
-        return try parseRecipeJSON(text)
     }
     
     // MARK: - Recipe JSON Parsing
@@ -669,6 +752,9 @@ enum AIServiceError: LocalizedError {
     case noIngredientsAvailable
     case rateLimitExceeded
     case networkError(String)
+    case networkConnectionFailed
+    case apiKeyInvalid
+    case cacheNotReady
     
     var errorDescription: String? {
         switch self {
@@ -682,6 +768,12 @@ enum AIServiceError: LocalizedError {
             return "Rate limit exceeded. Please try again later."
         case .networkError(let message):
             return "Network error: \(message)"
+        case .networkConnectionFailed:
+            return "Network connection failed. Please check your internet connection."
+        case .apiKeyInvalid:
+            return "API configuration error. Please contact support."
+        case .cacheNotReady:
+            return "Ingredient cache is not ready. Please try again."
         }
     }
 }

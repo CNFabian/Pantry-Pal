@@ -12,10 +12,11 @@ import FirebaseAnalytics
 struct Pantry_PalApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authService = AuthenticationService()
-    @StateObject private var firestoreService = FirestoreService.shared  // ✅ Use @StateObject
+    @StateObject private var firestoreService = FirestoreService.shared
     @StateObject private var fatSecretService = FatSecretService()
     @StateObject private var ingredientCache = IngredientCacheService.shared
     @StateObject private var settingsService = SettingsService()
+    @StateObject private var recipeService = RecipeService()
     
     init() {
         // Configure Firebase when the app starts
@@ -39,6 +40,7 @@ struct Pantry_PalApp: App {
                 .environmentObject(fatSecretService)
                 .environmentObject(ingredientCache)
                 .environmentObject(settingsService)
+                .environmentObject(recipeService)
                 .onAppear {
                     // Configure Firestore after Firebase is initialized
                     firestoreService.configureFirestoreForReliability()

@@ -13,19 +13,33 @@ class RecipeService: ObservableObject {
             throw RecipeError.userNotAuthenticated
         }
         
+        print("🔄 RecipeService: Saving recipe for user: \(userId)")
+        
+        // Use subcollection pattern like other services
+        let recipeRef = db.collection("users")
+            .document(userId)
+            .collection("recipes")
+            .document()
+        
         var recipeToSave = recipe
+        recipeToSave.id = recipeRef.documentID
         recipeToSave.userId = userId
         recipeToSave.savedAt = Timestamp(date: Date())
         
         do {
-            let docRef = try db.collection("savedRecipes").addDocument(from: recipeToSave)
+            try recipeRef.setData(from: recipeToSave)
+            print("✅ RecipeService: Recipe saved successfully")
             
-            // Ensure the ID is set
-            recipeToSave.id = docRef.documentID
+            // Add to local array immediately (don't fetch again)
+            await MainActor.run {
+                // Check if recipe already exists to prevent duplicates
+                if !self.savedRecipes.contains(where: { $0.id == recipeToSave.id }) {
+                    self.savedRecipes.insert(recipeToSave, at: 0)
+                }
+            }
             
-            // Refresh the list to ensure we have the latest data
-            try await fetchSavedRecipes()
         } catch {
+            print("❌ RecipeService: Error saving recipe: \(error)")
             throw RecipeError.saveFailed(error.localizedDescription)
         }
     }
@@ -35,14 +49,18 @@ class RecipeService: ObservableObject {
             throw RecipeError.userNotAuthenticated
         }
         
+        print("🔄 RecipeService: Fetching recipes for user: \(userId)")
+        
         await MainActor.run {
             self.isLoading = true
             self.errorMessage = nil
         }
         
         do {
-            let snapshot = try await db.collection("savedRecipes")
-                .whereField("userId", isEqualTo: userId)
+            // Use subcollection pattern
+            let snapshot = try await db.collection("users")
+                .document(userId)
+                .collection("recipes")
                 .order(by: "savedAt", descending: true)
                 .getDocuments()
             
@@ -50,13 +68,14 @@ class RecipeService: ObservableObject {
                 try document.data(as: Recipe.self)
             }
             
+            print("✅ RecipeService: Fetched \(recipes.count) recipes")
+            
             await MainActor.run {
-                // Clear the array first to prevent duplicates
-                self.savedRecipes.removeAll()
                 self.savedRecipes = recipes
                 self.isLoading = false
             }
         } catch {
+            print("❌ RecipeService: Error fetching recipes: \(error)")
             await MainActor.run {
                 self.errorMessage = error.localizedDescription
                 self.isLoading = false
@@ -66,19 +85,71 @@ class RecipeService: ObservableObject {
     }
     
     func deleteRecipe(_ recipe: Recipe) async throws {
-        guard let recipeId = recipe.id else {
+        guard let userId = Auth.auth().currentUser?.uid,
+              let recipeId = recipe.id else {
             throw RecipeError.invalidRecipe
         }
         
+        print("🔄 RecipeService: Deleting recipe: \(recipeId)")
+        
         do {
-            try await db.collection("savedRecipes").document(recipeId).delete()
+            // Use subcollection pattern
+            try await db.collection("users")
+                .document(userId)
+                .collection("recipes")
+                .document(recipeId)
+                .delete()
+            
+            print("✅ RecipeService: Recipe deleted successfully")
             
             await MainActor.run {
                 self.savedRecipes.removeAll { $0.id == recipeId }
             }
         } catch {
+            print("❌ RecipeService: Error deleting recipe: \(error)")
             throw RecipeError.deleteFailed(error.localizedDescription)
         }
+    }
+    
+    // MARK: - Real-time listener for recipes
+    func startListening() {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            print("⚠️ RecipeService: No user ID for listener")
+            return
+        }
+        
+        print("👂 RecipeService: Starting real-time listener for user: \(userId)")
+        
+        db.collection("users")
+            .document(userId)
+            .collection("recipes")
+            .order(by: "savedAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                Task { @MainActor in
+                    if let error = error {
+                        print("❌ RecipeService: Listener error: \(error)")
+                        self?.errorMessage = error.localizedDescription
+                        return
+                    }
+                    
+                    guard let documents = snapshot?.documents else {
+                        print("⚠️ RecipeService: No documents in snapshot")
+                        return
+                    }
+                    
+                    do {
+                        let recipes = try documents.compactMap { document in
+                            try document.data(as: Recipe.self)
+                        }
+                        
+                        print("📱 RecipeService: Real-time update - \(recipes.count) recipes")
+                        self?.savedRecipes = recipes
+                    } catch {
+                        print("❌ RecipeService: Error parsing recipes: \(error)")
+                        self?.errorMessage = "Error loading recipes"
+                    }
+                }
+            }
     }
 }
 

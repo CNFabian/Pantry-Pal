@@ -24,6 +24,9 @@ struct Recipe: Identifiable, Codable {
     var scaledFrom: Int?
     var savedAt: Timestamp?
     var userId: String?
+    var safeId: String {
+        return id ?? UUID().uuidString
+    }
     let cookingTools: [String]?
     
     var documentID: String {
