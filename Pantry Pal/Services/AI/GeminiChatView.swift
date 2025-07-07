@@ -91,17 +91,9 @@ struct GeminiChatView: View {
                         }
                 }
             }
-            .onChange(of: scannedBarcode) { _, newBarcode in
-                if let barcode = newBarcode {
-                    Task {
-                        await geminiService.handleScannedBarcode(barcode, fatSecretService: fatSecretService)
-                    }
-                    scannedBarcode = nil
-                }
-            }
             .onAppear {
                 geminiService.configure(firestoreService: firestoreService, authService: authService)
-            } 
+            }
         }
         
     }
@@ -201,7 +193,7 @@ struct GeminiChatView: View {
                     }
                     
                     // Chat messages
-                    ForEach(Array(geminiService.conversationHistory.enumerated()), id: \.offset) { index, message in
+                    ForEach(geminiService.conversationHistory, id: \.id) { message in
                         ChatBubble(message: message)
                     }
                     
@@ -213,7 +205,7 @@ struct GeminiChatView: View {
                 .padding(.horizontal, Constants.Design.standardPadding)
                 .padding(.vertical, Constants.Design.smallPadding)
             }
-            .onChange(of: geminiService.conversationHistory.count) { _, _ in
+            .onChange(of: geminiService.conversationHistory.count) {
                 if let lastMessage = geminiService.conversationHistory.last {
                     withAnimation(.easeOut(duration: 0.3)) {
                         proxy.scrollTo(lastMessage.id, anchor: .bottom)
@@ -222,7 +214,6 @@ struct GeminiChatView: View {
             }
         }
     }
-    
 
     private var inputControlsArea: some View {
         VStack(spacing: Constants.Design.smallPadding) {

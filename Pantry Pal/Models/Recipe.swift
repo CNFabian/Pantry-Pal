@@ -367,6 +367,8 @@ struct RecipeResponse: Codable {
 }
 
 struct RecipeData: Codable {
+    
+    
     let name: String
     let description: String
     let prepTime: String
@@ -394,5 +396,45 @@ struct RecipeData: Codable {
             cookingTools: cookingTools,
             userId: userId
         )
+    }
+}
+
+// MARK: - Custom Decoding for RecipeData
+extension RecipeData {
+    enum CodingKeys: String, CodingKey {
+        case name, description, prepTime, cookTime, totalTime, servings, difficulty
+        case ingredients, instructions, tags, cookingTools
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        name = try container.decode(String.self, forKey: .name)
+        description = try container.decode(String.self, forKey: .description)
+        servings = try container.decode(Int.self, forKey: .servings)
+        difficulty = try container.decode(String.self, forKey: .difficulty)
+        ingredients = try container.decode([RecipeIngredient].self, forKey: .ingredients)
+        instructions = try container.decode([RecipeInstruction].self, forKey: .instructions)
+        tags = try container.decode([String].self, forKey: .tags)
+        cookingTools = try container.decodeIfPresent([String].self, forKey: .cookingTools)
+        
+        // Handle time fields - can be either String or Int
+        if let prepTimeInt = try? container.decode(Int.self, forKey: .prepTime) {
+            prepTime = "\(prepTimeInt) minutes"
+        } else {
+            prepTime = try container.decode(String.self, forKey: .prepTime)
+        }
+        
+        if let cookTimeInt = try? container.decode(Int.self, forKey: .cookTime) {
+            cookTime = "\(cookTimeInt) minutes"
+        } else {
+            cookTime = try container.decode(String.self, forKey: .cookTime)
+        }
+        
+        if let totalTimeInt = try? container.decode(Int.self, forKey: .totalTime) {
+            totalTime = "\(totalTimeInt) minutes"
+        } else {
+            totalTime = try container.decode(String.self, forKey: .totalTime)
+        }
     }
 }
