@@ -52,8 +52,7 @@ struct MainTabView: View {
     @EnvironmentObject var ingredientCache: IngredientCacheService
     @EnvironmentObject var settingsService: SettingsService
     @EnvironmentObject var recipeService: RecipeService
-    @StateObject private var geminiService = GeminiService()
-    
+    @StateObject private var openAIService = OpenAIService()
     
     var body: some View {
         TabView {
@@ -70,7 +69,7 @@ struct MainTabView: View {
                 }
             
             NavigationView {
-                GeminiChatView()
+                OpenAIChatView()
                     .navigationTitle("AI Chat")
             }
             .tabItem {
@@ -78,7 +77,7 @@ struct MainTabView: View {
                 Text("AI Chat")
             }
             .environmentObject(fatSecretService)
-            .environmentObject(settingsService)  // Add this line
+            .environmentObject(settingsService)
             
             NotificationsView()
                 .tabItem {
@@ -94,8 +93,8 @@ struct MainTabView: View {
         }
         .accentColor(.primaryOrange)
         .onAppear {
-            geminiService.configure(firestoreService: firestoreService, authService: authService)
-            geminiService.setSettingsService(settingsService)  // Add this line
+            openAIService.configure(firestoreService: firestoreService, authService: authService) 
+            openAIService.setSettingsService(settingsService)
             loadInitialData()
             print("🐛 DEBUG: MainTabView appeared")
             if let userId = authService.user?.id {

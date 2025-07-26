@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		12999B332E34AD7700B690E6 /* OpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = 12999B322E34AD7700B690E6 /* OpenAI */; };
 		12D3BF642E1643F900E86B6F /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 12D3BF632E1643F900E86B6F /* FirebaseAnalytics */; };
 		12D3BF662E1644D800E86B6F /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = 12D3BF652E1644D800E86B6F /* FirebaseAnalyticsCore */; };
 		12D3BF682E1644D800E86B6F /* FirebaseAnalyticsIdentitySupport in Frameworks */ = {isa = PBXBuildFile; productRef = 12D3BF672E1644D800E86B6F /* FirebaseAnalyticsIdentitySupport */; };
@@ -118,6 +119,7 @@
 				12EEF9912E03DC22003D466E /* GoogleGenerativeAI in Frameworks */,
 				12D3BF662E1644D800E86B6F /* FirebaseAnalyticsCore in Frameworks */,
 				12D3BF682E1644D800E86B6F /* FirebaseAnalyticsIdentitySupport in Frameworks */,
+				12999B332E34AD7700B690E6 /* OpenAI in Frameworks */,
 				12EEF9512E035C06003D466E /* FirebaseInAppMessaging-Beta in Frameworks */,
 				12D3BF6C2E1644D800E86B6F /* FirebaseAnalyticsWithoutAdIdSupport in Frameworks */,
 				12D3BF642E1643F900E86B6F /* FirebaseAnalytics in Frameworks */,
@@ -196,6 +198,7 @@
 				12D3BF672E1644D800E86B6F /* FirebaseAnalyticsIdentitySupport */,
 				12D3BF692E1644D800E86B6F /* FirebaseAnalyticsOnDeviceConversion */,
 				12D3BF6B2E1644D800E86B6F /* FirebaseAnalyticsWithoutAdIdSupport */,
+				12999B322E34AD7700B690E6 /* OpenAI */,
 			);
 			productName = "Pantry Pal";
 			productReference = 126BBA6D2E034ADD006EEF32 /* Pantry Pal.app */;
@@ -282,6 +285,7 @@
 			packageReferences = (
 				12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				12EEF98F2E03DC22003D466E /* XCRemoteSwiftPackageReference "generative-ai-swift" */,
+				12999B312E34AD7700B690E6 /* XCRemoteSwiftPackageReference "OpenAI" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 126BBA6E2E034ADD006EEF32 /* Products */;
@@ -650,6 +654,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		12999B312E34AD7700B690E6 /* XCRemoteSwiftPackageReference "OpenAI" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/MacPaw/OpenAI";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.4.5;
+			};
+		};
 		12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
@@ -669,6 +681,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		12999B322E34AD7700B690E6 /* OpenAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12999B312E34AD7700B690E6 /* XCRemoteSwiftPackageReference "OpenAI" */;
+			productName = OpenAI;
+		};
 		12D3BF632E1643F900E86B6F /* FirebaseAnalytics */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 12EEF9492E035C05003D466E /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;

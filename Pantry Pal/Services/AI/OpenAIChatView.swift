@@ -1,12 +1,12 @@
 //
-//  GeminiChatView.swift
+//  OpenAIChatView.swift
 //  Pantry Pal
 //
 
 import SwiftUI
 
-struct GeminiChatView: View {
-    @StateObject private var geminiService = GeminiService()
+struct OpenAIChatView: View {
+    @StateObject private var openAIService = OpenAIService()
     @EnvironmentObject var fatSecretService: FatSecretService
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var authService: AuthenticationService
@@ -26,7 +26,7 @@ struct GeminiChatView: View {
         NavigationView {
             VStack(spacing: 0) {
                 // Error state check
-                if case .error(_) = geminiService.connectionStatus {
+                if case .error(_) = openAIService.connectionStatus {
                     errorStateView
                 } else {
                     // Status bar
@@ -44,64 +44,45 @@ struct GeminiChatView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Button("Scan Barcode") {
-                            showingBarcodeScanner = true
-                        }
-                        
                         Button("Clear Chat") {
-                            geminiService.clearConversation()
+                            openAIService.clearConversation()
                         }
                         
-                        Button(geminiService.isSpeaking ? "Stop Speaking" : "Start Speaking") {
-                            if geminiService.isSpeaking {
-                                geminiService.stopSpeaking()
+                        Button(openAIService.isSpeaking ? "Stop Speaking" : "Settings") {
+                            if openAIService.isSpeaking {
+                                openAIService.stopSpeaking()
+                            } else {
+                                showSettings = true
                             }
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .foregroundColor(.primaryOrange)
                     }
-                    Button {
-                               showSettings = true
-                           } label: {
-                               Image(systemName: "gearshape")
-                                   .foregroundColor(.primaryOrange)
-                           }
                 }
             }
-            .sheet(isPresented: $showingBarcodeScanner) {
-                BarcodeScannerView(scannedCode: $scannedBarcode, isPresented: $showingBarcodeScanner)
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-                    .environmentObject(settingsService)
-            }
-            .onChange(of: scannedBarcode) { _, newBarcode in
-                if let barcode = newBarcode {
-                    Task {
-                        await geminiService.handleScannedBarcode(barcode, fatSecretService: fatSecretService)
-                    }
-                    scannedBarcode = nil
-                }
-            }
-            .onAppear {
-                geminiService.configure(firestoreService: firestoreService, authService: authService)
-            } 
         }
-        
+        .onAppear {
+            openAIService.configure(firestoreService: firestoreService, authService: authService)
+            openAIService.setSettingsService(settingsService)
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+        }
     }
     
     private var errorStateView: some View {
         VStack(spacing: Constants.Design.standardPadding) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.red)
+                .font(.system(size: 50))
+                .foregroundColor(.orange)
             
-            Text("AI Assistant Unavailable")
+            Text("Connection Error")
                 .font(.title2)
                 .fontWeight(.bold)
+                .foregroundColor(.textPrimary)
             
-            if case .error(let message) = geminiService.connectionStatus {
+            if case .error(let message) = openAIService.connectionStatus {
                 Text(message)
                     .font(.body)
                     .foregroundColor(.textSecondary)
@@ -109,7 +90,7 @@ struct GeminiChatView: View {
             }
             
             Button("Retry") {
-                geminiService.clearConversation()
+                openAIService.clearConversation()
             }
             .buttonStyle(.borderedProminent)
             .tint(.primaryOrange)
@@ -129,13 +110,13 @@ struct GeminiChatView: View {
             
             Spacer()
             
-            if geminiService.isProcessing {
+            if openAIService.isProcessing {
                 ProgressView()
                     .scaleEffect(0.7)
             }
             
-            if !geminiService.speechRecognitionText.isEmpty && geminiService.isListening {
-                Text("Listening: \(geminiService.speechRecognitionText)")
+            if !openAIService.speechRecognitionText.isEmpty && openAIService.isListening {
+                Text("Listening: \(openAIService.speechRecognitionText)")
                     .font(.caption)
                     .foregroundColor(.primaryOrange)
                     .lineLimit(1)
@@ -147,7 +128,7 @@ struct GeminiChatView: View {
     }
     
     private var statusColor: Color {
-        switch geminiService.connectionStatus {
+        switch openAIService.connectionStatus {
         case .ready:
             return .green
         case .listeningForSpeech:
@@ -162,7 +143,7 @@ struct GeminiChatView: View {
     }
     
     private var statusText: String {
-        switch geminiService.connectionStatus {
+        switch openAIService.connectionStatus {
         case .ready:
             return "Ready to chat"
         case .listeningForSpeech:
@@ -181,25 +162,25 @@ struct GeminiChatView: View {
             ScrollView {
                 LazyVStack(spacing: Constants.Design.standardPadding) {
                     // Welcome message
-                    if geminiService.conversationHistory.isEmpty {
+                    if openAIService.conversationHistory.isEmpty {
                         welcomeMessage
                     }
                     
                     // Chat messages
-                    ForEach(geminiService.conversationHistory) { message in
-                        ChatBubble(message: message)
+                    ForEach(openAIService.conversationHistory) { message in
+                        PantryChatBubble(message: message)
                     }
                     
                     // Typing indicator
-                    if geminiService.isProcessing {
+                    if openAIService.isProcessing {
                         TypingIndicator()
                     }
                 }
                 .padding(.horizontal, Constants.Design.standardPadding)
                 .padding(.vertical, Constants.Design.smallPadding)
             }
-            .onChange(of: geminiService.conversationHistory.count) { _, _ in
-                if let lastMessage = geminiService.conversationHistory.last {
+            .onChange(of: openAIService.conversationHistory.count) { _, _ in
+                if let lastMessage = openAIService.conversationHistory.last {
                     withAnimation(.easeOut(duration: 0.3)) {
                         proxy.scrollTo(lastMessage.id, anchor: .bottom)
                     }
@@ -261,19 +242,15 @@ struct GeminiChatView: View {
     
     private var voiceButton: some View {
         Button {
-            if geminiService.isListening {
-                geminiService.stopListening()
-            } else {
-                geminiService.startListening()
-            }
+            openAIService.toggleListening()
         } label: {
-            Image(systemName: geminiService.isListening ? "stop.circle.fill" : "mic.circle.fill")
+            Image(systemName: openAIService.isListening ? "stop.circle.fill" : "mic.circle.fill")
                 .font(.system(size: 50))
-                .foregroundColor(geminiService.isListening ? .red : .primaryOrange)
+                .foregroundColor(openAIService.isListening ? .red : .primaryOrange)
         }
-        .disabled(geminiService.isProcessing || geminiService.isSpeaking)
-        .scaleEffect(geminiService.isListening ? 1.1 : 1.0)
-        .animation(.easeInOut(duration: 0.1), value: geminiService.isListening)
+        .disabled(openAIService.isProcessing || openAIService.isSpeaking)
+        .scaleEffect(openAIService.isListening ? 1.1 : 1.0)
+        .animation(.easeInOut(duration: 0.1), value: openAIService.isListening)
     }
     
     private var textInputArea: some View {
@@ -291,7 +268,7 @@ struct GeminiChatView: View {
                     .font(.title2)
                     .foregroundColor(.primaryOrange)
             }
-            .disabled(messageText.trimmingCharacters(in: .whitespaces).isEmpty || geminiService.isProcessing)
+            .disabled(messageText.trimmingCharacters(in: .whitespaces).isEmpty || openAIService.isProcessing)
         }
     }
     
@@ -301,31 +278,89 @@ struct GeminiChatView: View {
         
         messageText = ""
         Task {
-            await geminiService.sendMessage(text)
+            await openAIService.sendMessage(text)
         }
     }
 }
 
-protocol UIValidatable {
-    var isValidForUI: Bool { get }
-    associatedtype SafeType
-    var safeForUI: SafeType { get }
-}
-
-
-extension CGFloat: UIValidatable {
-    var isValidForUI: Bool {
-        return !isNaN && !isInfinite && isFinite
+// MARK: - Custom Chat Bubble for PantryChatMessage
+struct PantryChatBubble: View {
+    let message: PantryChatMessage
+    
+    var body: some View {
+        HStack {
+            if message.isUser {
+                Spacer(minLength: 60)
+                userBubble
+            } else {
+                aiBubble
+                Spacer(minLength: 60)
+            }
+        }
     }
     
-    var safeForUI: CGFloat {
-        return isValidForUI ? self : 0.0
+    private var userBubble: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            Text(message.text)
+                .font(.body)
+                .foregroundColor(.white)
+                .padding(.horizontal, Constants.Design.standardPadding)
+                .padding(.vertical, Constants.Design.smallPadding)
+                .background(
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(Color.primaryOrange)
+                )
+            
+            Text(formatTime(message.timestamp))
+                .font(.caption2)
+                .foregroundColor(.textSecondary)
+                .padding(.trailing, 4)
+        }
+    }
+    
+    private var aiBubble: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: Constants.Design.smallPadding) {
+                // AI Avatar
+                Image(systemName: "fork.knife.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.primaryOrange)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(Color.primaryOrange.opacity(0.1))
+                    )
+                
+                Text(message.text)
+                    .font(.body)
+                    .foregroundColor(.textPrimary)
+                    .padding(.horizontal, Constants.Design.standardPadding)
+                    .padding(.vertical, Constants.Design.smallPadding)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color(.systemGray6))
+                    )
+            }
+            
+            Text(formatTime(message.timestamp))
+                .font(.caption2)
+                .foregroundColor(.textSecondary)
+                .padding(.leading, 40)
+        }
+    }
+    
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 
 #Preview {
-    GeminiChatView()
+    OpenAIChatView()
         .environmentObject(FatSecretService())
         .environmentObject(FirestoreService())
         .environmentObject(AuthenticationService())
+        .environmentObject(IngredientCacheService.shared)
+        .environmentObject(SettingsService())
 }
