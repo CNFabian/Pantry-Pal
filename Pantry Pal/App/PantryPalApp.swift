@@ -42,14 +42,13 @@ struct Pantry_PalApp: App {
                 .environmentObject(settingsService)
                 .environmentObject(recipeService)
                 .onAppear {
-                    // Configure Firestore after Firebase is initialized
-                    firestoreService.configureFirestoreForReliability()
-                    firestoreService.monitorFirestoreConnection()
-                    
                     // Set the authService reference after the view appears
                     firestoreService.setAuthService(authService)
                     firestoreService.setIngredientCache(ingredientCache)
                     settingsService.setAuthService(authService)
+                    
+                    // Debug authentication state
+                    firestoreService.debugAuthenticationState()
                 }
         }
     }

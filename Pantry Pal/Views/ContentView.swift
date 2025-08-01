@@ -10,7 +10,6 @@ struct ContentView: View {
     @EnvironmentObject var firestoreService: FirestoreService
     @EnvironmentObject var ingredientCache: IngredientCacheService
     
-    
     var body: some View {
         ZStack {
             if authService.isLoading {
@@ -93,20 +92,20 @@ struct MainTabView: View {
         }
         .accentColor(.primaryOrange)
         .onAppear {
-            openAIService.configure(firestoreService: firestoreService, authService: authService) 
+            openAIService.configure(firestoreService: firestoreService, authService: authService)
             openAIService.setSettingsService(settingsService)
             loadInitialData()
             print("🐛 DEBUG: MainTabView appeared")
             if let userId = authService.user?.id {
-                    Task {
-                        await firestoreService.loadIngredients(for: userId)
-                        await firestoreService.loadRecipes(for: userId)
-                        await firestoreService.loadNotifications(for: userId)
-                        await settingsService.loadUserSettings()
-                        
-                        recipeService.startListening()
-                    }
+                Task {
+                    await firestoreService.loadIngredients(for: userId)
+                    await firestoreService.loadRecipes(for: userId)
+                    // Remove loadNotifications call since method doesn't exist
+                    await settingsService.loadUserSettings()
+                    
+                    recipeService.startListening()
                 }
+            }
         }
     }
     
@@ -119,8 +118,8 @@ struct MainTabView: View {
             
             await firestoreService.loadIngredients(for: userId)
             await firestoreService.loadRecipes(for: userId)
-            await firestoreService.loadNotifications(for: userId)
-            await settingsService.loadUserSettings()  // Add this line
+            // Remove loadNotifications call since method doesn't exist
+            await settingsService.loadUserSettings()
         }
     }
 }
@@ -142,6 +141,7 @@ struct ProfileView: View {
         }
     }
 }
+
 #Preview {
     ContentView()
         .environmentObject(AuthenticationService())

@@ -6,6 +6,7 @@
 import Foundation
 import Firebase
 import FirebaseFirestore
+import FirebaseAuth
 import Combine
 
 // MARK: - FirestoreError enum
@@ -44,14 +45,25 @@ class FirestoreService: ObservableObject {
     private var historyListener: ListenerRegistration?
     private var authService: AuthenticationService?
     private var ingredientCache: IngredientCacheService?
+    
+    // Enhanced error handling and retry logic
+    private var retryCount = 0
+    private let maxRetries = 3
+    private var retryTimer: Timer?
+    private var authStateListener: AuthStateDidChangeListenerHandle?
+    
     static let shared = FirestoreService()
     
     init() {
         configureFirestore()
+        setupComprehensiveFirestoreDebugging()
     }
     
     deinit {
         removeAllListeners()
+        if let authStateListener = authStateListener {
+            Auth.auth().removeStateDidChangeListener(authStateListener)
+        }
     }
     
     // MARK: - AuthService Dependency Injection
@@ -67,8 +79,9 @@ class FirestoreService: ObservableObject {
     private func configureFirestore() {
         let settings = FirestoreSettings()
         settings.isPersistenceEnabled = true
-        settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
+        settings.cacheSizeBytes = 50 * 1024 * 1024 // 50MB cache
         db.settings = settings
+        print("✅ Firestore configured with offline persistence")
     }
     
     func configureFirestoreForReliability() {
@@ -79,13 +92,71 @@ class FirestoreService: ObservableObject {
         print("✅ Firestore configured for offline persistence")
     }
     
+    func setupComprehensiveFirestoreDebugging() {
+        print("🔧 Setting up comprehensive Firestore debugging...")
+        
+        // Monitor authentication state changes
+        authStateListener = Auth.auth().addStateDidChangeListener { [weak self] auth, user in
+            if let user = user {
+                print("🔐 Auth state changed - User logged in: \(user.uid)")
+                print("🔐 User is anonymous: \(user.isAnonymous)")
+                print("🔐 User email: \(user.email ?? "No email")")
+            } else {
+                print("🔓 Auth state changed - User logged out")
+                // Remove all listeners when user logs out
+                self?.removeAllListeners()
+            }
+        }
+        
+        // Test basic Firestore connectivity
+        testFirestoreConnectivity()
+        
+        // Monitor network state
+        monitorFirestoreConnection()
+    }
+    
+    private func testFirestoreConnectivity() {
+        print("🧪 Testing Firestore connectivity...")
+        
+        db.collection("test").limit(to: 1).getDocuments { snapshot, error in
+            if let error = error {
+                print("❌ Firestore connectivity test failed: \(error)")
+                print("Error domain: \((error as NSError).domain)")
+                print("Error code: \((error as NSError).code)")
+                print("Error userInfo: \((error as NSError).userInfo)")
+            } else {
+                print("✅ Firestore connectivity test passed")
+            }
+        }
+    }
+    
     func monitorFirestoreConnection() {
         db.enableNetwork { error in
             if let error = error {
                 print("❌ Firestore network error: \(error)")
+                print("Full error details: \(error.localizedDescription)")
             } else {
-                print("✅ Firestore network enabled")
+                print("✅ Firestore network connection established")
             }
+        }
+    }
+    
+    func debugAuthenticationState() {
+        if let currentUser = Auth.auth().currentUser {
+            print("🔐 Current user: \(currentUser.uid)")
+            print("🔐 User is anonymous: \(currentUser.isAnonymous)")
+            print("🔐 User email: \(currentUser.email ?? "No email")")
+            
+            // Test a simple Firestore read with current user
+            db.collection("users").document(currentUser.uid).getDocument { document, error in
+                if let error = error {
+                    print("❌ User document read failed: \(error)")
+                } else {
+                    print("✅ User document read successful")
+                }
+            }
+        } else {
+            print("❌ No authenticated user found")
         }
     }
     
@@ -112,12 +183,30 @@ class FirestoreService: ObservableObject {
         )
     }
     
-    // MARK: - Listener Management
+    // MARK: - Enhanced Listener Management
     private func removeAllListeners() {
+        print("🧹 Removing all Firestore listeners")
+        
         ingredientsListener?.remove()
+        ingredientsListener = nil
+        
         recipesListener?.remove()
+        recipesListener = nil
+        
         notificationsListener?.remove()
+        notificationsListener = nil
+        
         historyListener?.remove()
+        historyListener = nil
+        
+        // Cancel retry timer
+        retryTimer?.invalidate()
+        retryTimer = nil
+        
+        // Reset retry count
+        retryCount = 0
+        
+        print("✅ All listeners removed")
     }
     
     // MARK: - Authentication Check
@@ -127,7 +216,21 @@ class FirestoreService: ObservableObject {
         }
         return userId
     }
-
+    
+    private func ensureUserAuthenticated() async throws -> String {
+        guard let authService = self.authService else {
+            throw FirestoreError.userNotAuthenticated
+        }
+        
+        let isUserReady = await authService.ensureUserReady()
+        guard isUserReady, let userId = authService.user?.id else {
+            throw FirestoreError.userNotAuthenticated
+        }
+        
+        return userId
+    }
+    
+    // MARK: - Ingredient Operations
     func loadIngredients(for userId: String) async {
         print("🔄 Loading ingredients for user: \(userId)")
         
@@ -177,12 +280,14 @@ class FirestoreService: ObservableObject {
                 .getDocuments()
             
             let loadedIngredients = try snapshot.documents.compactMap { document in
-                try document.data(as: Ingredient.self)
+                let ingredient = try document.data(as: Ingredient.self)
+                return validateIngredientData(ingredient)
             }
             
             DispatchQueue.main.async {
                 self.ingredients = loadedIngredients
                 self.isLoading = false
+                self.errorMessage = ""
                 
                 // Update the cache
                 if let cache = self.ingredientCache {
@@ -194,29 +299,28 @@ class FirestoreService: ObservableObject {
         } catch {
             print("❌ Error loading ingredients: \(error)")
             DispatchQueue.main.async {
+                self.errorMessage = "Failed to load ingredients: \(error.localizedDescription)"
                 self.isLoading = false
             }
         }
     }
     
-    // MARK: - Helper Methods
-    private func ensureUserAuthenticated() async throws -> String {
-        guard let authService = self.authService else {
-            throw FirestoreError.userNotAuthenticated
-        }
-        
-        let isUserReady = await authService.ensureUserReady()
-        guard isUserReady, let userId = authService.user?.id else {
-            throw FirestoreError.userNotAuthenticated
-        }
-        
-        return userId
-    }
-    
+    // MARK: - Enhanced Listener with Retry Logic
     func startIngredientsListener(for userId: String) {
-        print("👂 Starting ingredients listener for user: \(userId)")
+        print("👂 Starting ingredients listener for user: \(userId) (Attempt \(retryCount + 1))")
         
+        // Cancel any existing retry timer
+        retryTimer?.invalidate()
+        retryTimer = nil
+        
+        // Remove existing listener
         ingredientsListener?.remove()
+        
+        // Ensure user is authenticated before setting up listener
+        guard Auth.auth().currentUser?.uid == userId else {
+            print("❌ User authentication mismatch - cannot start listener")
+            return
+        }
         
         ingredientsListener = db.collection("users")
             .document(userId)
@@ -227,12 +331,12 @@ class FirestoreService: ObservableObject {
                 guard let self = self else { return }
                 
                 if let error = error {
-                    print("❌ Ingredients listener error: \(error)")
-                    DispatchQueue.main.async {
-                        self.errorMessage = "Failed to sync ingredients"
-                    }
+                    self.handleListenerError(error, userId: userId)
                     return
                 }
+                
+                // Reset retry count on successful connection
+                self.retryCount = 0
                 
                 guard let documents = snapshot?.documents else {
                     print("⚠️ No ingredients documents found")
@@ -241,11 +345,14 @@ class FirestoreService: ObservableObject {
                 
                 do {
                     let ingredients = try documents.compactMap { document in
-                        try document.data(as: Ingredient.self)
+                        let ingredient = try document.data(as: Ingredient.self)
+                        return self.validateIngredientData(ingredient)
                     }
                     
                     DispatchQueue.main.async {
                         self.ingredients = ingredients
+                        self.isLoading = false
+                        self.errorMessage = ""
                         
                         if let cache = self.ingredientCache {
                             cache.updateCache(with: ingredients)
@@ -255,8 +362,55 @@ class FirestoreService: ObservableObject {
                     }
                 } catch {
                     print("❌ Error parsing ingredients: \(error)")
+                    DispatchQueue.main.async {
+                        self.errorMessage = "Failed to parse ingredients"
+                    }
                 }
             }
+    }
+    
+    private func handleListenerError(_ error: Error, userId: String) {
+        let nsError = error as NSError
+        
+        print("❌ Ingredients listener error: \(error)")
+        print("Error domain: \(nsError.domain)")
+        print("Error code: \(nsError.code)")
+        print("Error userInfo: \(nsError.userInfo)")
+        
+        DispatchQueue.main.async {
+            self.errorMessage = "Connection error: \(error.localizedDescription)"
+        }
+        
+        // Handle specific error cases
+        switch nsError.code {
+        case 1: // CANCELLED
+            print("🛑 Listener cancelled - not retrying")
+            return
+        case 7: // PERMISSION_DENIED
+            print("🚫 Permission denied - check Firestore rules and authentication")
+            return
+        case 14: // UNAVAILABLE
+            print("🌐 Network unavailable - will retry")
+        case 4: // DEADLINE_EXCEEDED
+            print("⏱️ Request timeout - will retry")
+        default:
+            print("❓ Unknown error - will retry")
+        }
+        
+        // Implement exponential backoff retry
+        if retryCount < maxRetries {
+            retryCount += 1
+            let delay = pow(2.0, Double(retryCount)) // 2, 4, 8 seconds
+            
+            print("🔄 Retrying listener setup in \(delay) seconds...")
+            
+            retryTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+                self?.startIngredientsListener(for: userId)
+            }
+        } else {
+            print("❌ Max retries exceeded - giving up on listener")
+            retryCount = 0
+        }
     }
     
     func addIngredient(_ ingredient: Ingredient) async throws {
@@ -271,9 +425,10 @@ class FirestoreService: ObservableObject {
         do {
             try ingredientRef.setData(from: ingredientWithId)
             print("✅ Ingredient added successfully")
+            
             Task { @MainActor in
                 self.ingredientCache?.addIngredient(ingredientWithId)
-                self.ingredients.append(ingredientWithId) // Add this line
+                self.ingredients.append(ingredientWithId)
             }
         } catch {
             print("❌ Error adding ingredient: \(error)")
@@ -292,50 +447,45 @@ class FirestoreService: ObservableObject {
             .collection("ingredients").document(ingredientId)
         
         do {
-            var data: [String: Any] = [
+            // Create update data manually instead of modifying the struct
+            var updateData: [String: Any] = [
                 "name": ingredient.name,
                 "quantity": ingredient.quantity,
                 "unit": ingredient.unit,
                 "category": ingredient.category,
                 "dateAdded": ingredient.dateAdded,
-                "userId": userId
+                "updatedAt": Timestamp()
             ]
             
-            // Only add optional fields if they exist
+            // Add optional fields
             if let expirationDate = ingredient.expirationDate {
-                data["expirationDate"] = expirationDate
+                updateData["expirationDate"] = expirationDate
             }
             if let notes = ingredient.notes {
-                data["notes"] = notes
+                updateData["notes"] = notes
             }
+            // Remove the optional binding for non-optional properties
+            updateData["createdAt"] = ingredient.createdAt
+            updateData["userId"] = ingredient.userId
             
-            try await ingredientRef.setData(data)
-
+            try await ingredientRef.updateData(updateData)
+            
             Task { @MainActor in
                 if let index = self.ingredients.firstIndex(where: { $0.id == ingredient.id }) {
                     self.ingredients[index] = ingredient
                 }
-            }
-            
-            // Update local ingredients array
-            if let index = ingredients.firstIndex(where: { $0.id == ingredient.id }) {
-                ingredients[index] = ingredient
+                self.ingredientCache?.updateIngredient(ingredient)
             }
             
             print("✅ Ingredient updated successfully")
-            Task { @MainActor in
-                self.ingredientCache?.updateIngredient(ingredient)
-            }
         } catch {
             print("❌ Error updating ingredient: \(error)")
             throw FirestoreError.saveFailed(error.localizedDescription)
         }
     }
-
+    
     func deleteIngredient(_ ingredientId: String) async throws {
-        guard let userId = authService?.user?.id else {
-            throw FirestoreError.userNotAuthenticated
-        }
+        let userId = try await ensureUserAuthenticated()
         
         let ingredientRef = db.collection("users").document(userId)
             .collection("ingredients").document(ingredientId)
@@ -344,57 +494,57 @@ class FirestoreService: ObservableObject {
             try await ingredientRef.delete()
             
             Task { @MainActor in
-                self.ingredients.removeAll { $0.id == ingredientId }
-            }
-            
-            // Remove from local ingredients array
-            ingredients.removeAll { $0.id == ingredientId }
-            
-            print("✅ Ingredient deleted successfully")
-            Task { @MainActor in
+                if let index = self.ingredients.firstIndex(where: { $0.id == ingredientId }) {
+                    self.ingredients.remove(at: index)
+                }
                 self.ingredientCache?.removeIngredient(withId: ingredientId)
             }
+            
+            print("✅ Ingredient deleted successfully")
         } catch {
             print("❌ Error deleting ingredient: \(error)")
             throw FirestoreError.deleteFailed(error.localizedDescription)
         }
     }
     
-    // MARK: - Trash Operations
-    func moveToTrash(ingredientId: String, userId: String) async throws {
-        try await db.collection(Constants.Firebase.ingredients)
-            .document(ingredientId)
-            .updateData([
+    func moveIngredientToTrash(_ ingredientId: String) async throws {
+        let userId = try await ensureUserAuthenticated()
+        
+        let ingredientRef = db.collection("users").document(userId)
+            .collection("ingredients").document(ingredientId)
+        
+        do {
+            try await ingredientRef.updateData([
                 "inTrash": true,
-                "trashedAt": Timestamp(date: Date()),
-                "updatedAt": Timestamp(date: Date())
+                "trashedAt": Timestamp(),
+                "updatedAt": Timestamp()
             ])
-        
-        // Refresh the ingredients list
-        await loadIngredients(for: userId)
-    }
-    
-    func restoreFromTrash(ingredientId: String, userId: String) async throws {
-        try await db.collection(Constants.Firebase.ingredients)
-            .document(ingredientId)
-            .updateData([
-                "inTrash": false,
-                "trashedAt": FieldValue.delete(),
-                "updatedAt": Timestamp(date: Date())
-            ])
-        
-        await loadIngredients(for: userId)
+            
+            Task { @MainActor in
+                if let index = self.ingredients.firstIndex(where: { $0.id == ingredientId }) {
+                    self.ingredients.remove(at: index)
+                }
+                self.ingredientCache?.removeIngredient(withId: ingredientId)
+            }
+            
+            print("✅ Ingredient moved to trash successfully")
+        } catch {
+            print("❌ Error moving ingredient to trash: \(error)")
+            throw FirestoreError.saveFailed(error.localizedDescription)
+        }
     }
     
     func fetchTrashedIngredients(for userId: String) async throws -> [Ingredient] {
-        let snapshot = try await db.collection(Constants.Firebase.ingredients)
-            .whereField("userId", isEqualTo: userId)
+        let snapshot = try await db.collection("users")
+            .document(userId)
+            .collection("ingredients")
             .whereField("inTrash", isEqualTo: true)
             .order(by: "trashedAt", descending: true)
             .getDocuments()
         
         return try snapshot.documents.compactMap { document in
-            try document.data(as: Ingredient.self)
+            let ingredient = try document.data(as: Ingredient.self)
+            return validateIngredientData(ingredient)
         }
     }
     
@@ -444,6 +594,10 @@ class FirestoreService: ObservableObject {
         do {
             try recipeRef.setData(from: recipeWithId)
             print("✅ Recipe saved successfully")
+            
+            Task { @MainActor in
+                self.recipes.insert(recipeWithId, at: 0)
+            }
         } catch {
             print("❌ Error saving recipe: \(error)")
             throw FirestoreError.saveFailed(error.localizedDescription)
@@ -457,8 +611,9 @@ class FirestoreService: ObservableObject {
         do {
             try await recipeRef.delete()
             
-            // Remove from local recipes array
-            recipes.removeAll { $0.id == recipeId }
+            Task { @MainActor in
+                self.recipes.removeAll { $0.id == recipeId }
+            }
             
             print("✅ Recipe deleted successfully")
         } catch {
@@ -467,125 +622,51 @@ class FirestoreService: ObservableObject {
         }
     }
     
-    // MARK: - Notification Operations
-    func loadNotifications(for userId: String) async {
-        print("🔄 Loading notifications for user: \(userId)")
+    // MARK: - History Operations
+    func addHistoryEntry(_ entry: HistoryEntry, for userId: String) async throws {
+        let historyRef = db.collection("users").document(userId)
+            .collection("history").document()
+        
+        // Create new entry with required fields instead of modifying existing
+        let entryData: [String: Any] = [
+            "id": historyRef.documentID,
+            "userId": userId,
+            "timestamp": entry.timestamp,
+            "action": entry.action,
+            "details": entry.details
+        ]
         
         do {
-            let snapshot = try await db.collection("users")
-                .document(userId)
-                .collection("notifications")
-                .order(by: "createdAt", descending: true)
-                .limit(to: 50)
-                .getDocuments()
-            
-            let loadedNotifications = try snapshot.documents.compactMap { document in
-                try document.data(as: NotificationEntry.self)
-            }
-            
-            DispatchQueue.main.async {
-                self.notifications = loadedNotifications
-            }
-            
-            print("✅ Loaded \(loadedNotifications.count) notifications")
+            try await historyRef.setData(entryData)
+            print("✅ History entry added successfully")
         } catch {
-            print("❌ Error loading notifications: \(error)")
+            print("❌ Error adding history entry: \(error)")
+            throw FirestoreError.saveFailed(error.localizedDescription)
         }
     }
     
-    func markNotificationAsRead(_ notificationId: String, for userId: String) async throws {
-        let notificationRef = db.collection("users").document(userId)
-            .collection("notifications").document(notificationId)
-        
-        try await notificationRef.updateData([
-            "read": true,
-            "readAt": Timestamp()
-        ])
-        
-        // Update local notification
-        if let index = notifications.firstIndex(where: { $0.id == notificationId }) {
-            // Note: Since NotificationEntry properties are let constants, we'd need to recreate
-            // or mark this for refresh from server
-            await loadNotifications(for: userId)
-        }
-    }
-    
-    // MARK: - History Operations
-    func loadHistory(for userId: String) async {
-        print("🔄 Loading history for user: \(userId)")
+    func loadHistoryEntries(for userId: String) async {
+        print("🔄 Loading history entries for user: \(userId)")
         
         do {
             let snapshot = try await db.collection("users")
                 .document(userId)
                 .collection("history")
                 .order(by: "timestamp", descending: true)
-                .limit(to: 100)
+                .limit(to: 50)
                 .getDocuments()
             
-            let loadedHistory = try snapshot.documents.compactMap { document in
+            let loadedEntries = try snapshot.documents.compactMap { document in
                 try document.data(as: HistoryEntry.self)
             }
             
             DispatchQueue.main.async {
-                self.historyEntries = loadedHistory
+                self.historyEntries = loadedEntries
             }
             
-            print("✅ Loaded \(loadedHistory.count) history entries")
+            print("✅ Loaded \(loadedEntries.count) history entries")
         } catch {
-            print("❌ Error loading history: \(error)")
-        }
-    }
-    
-    func addHistoryEntry(type: String, action: String, description: String, details: [String: Any]?, for userId: String) async {
-        let historyRef = db.collection("users").document(userId)
-            .collection("history").document()
-        
-        let historyEntry = HistoryEntry(
-            id: historyRef.documentID,
-            type: type,
-            action: action,
-            description: description,
-            timestamp: Timestamp(),
-            userId: userId,
-            details: details?.mapValues { AnyCodable($0) }
-        )
-        
-        do {
-            try historyRef.setData(from: historyEntry)
-            print("✅ History entry added successfully")
-        } catch {
-            print("❌ Error adding history entry: \(error)")
-        }
-    }
-    
-    // MARK: - Utility Methods
-    func clearCache() {
-        db.clearPersistence { error in
-            if let error = error {
-                print("❌ Error clearing Firestore cache: \(error)")
-            } else {
-                print("✅ Firestore cache cleared")
-            }
-        }
-    }
-    
-    func enableOfflineMode() {
-        db.disableNetwork { error in
-            if let error = error {
-                print("❌ Error enabling offline mode: \(error)")
-            } else {
-                print("✅ Offline mode enabled")
-            }
-        }
-    }
-    
-    func enableOnlineMode() {
-        db.enableNetwork { error in
-            if let error = error {
-                print("❌ Error enabling online mode: \(error)")
-            } else {
-                print("✅ Online mode enabled")
-            }
+            print("❌ Error loading history entries: \(error)")
         }
     }
 }

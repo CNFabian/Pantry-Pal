@@ -437,10 +437,7 @@ struct IngredientsListView: View {
         
         Task {
             do {
-                try await firestoreService.moveToTrash(
-                    ingredientId: ingredientId,
-                    userId: userId
-                )
+                try await firestoreService.moveIngredientToTrash(ingredientId)
             } catch {
                 print("Error moving ingredient to trash: \(error)")
             }
