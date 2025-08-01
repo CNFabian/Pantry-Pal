@@ -6,8 +6,8 @@
 import SwiftUI
 
 struct ChatBubble: View {
-    let message: ChatMessage
-    
+    let message: PantryChatMessage
+
     var body: some View {
         HStack {
             if message.isUser {
