@@ -7,7 +7,7 @@ import SwiftUI
 
 struct ChatBubble: View {
     let message: PantryChatMessage
-
+    
     var body: some View {
         HStack {
             if message.isUser {
@@ -66,7 +66,7 @@ struct ChatBubble: View {
             Text(formatTime(message.timestamp))
                 .font(.caption2)
                 .foregroundColor(.textSecondary)
-                .padding(.leading, 44)
+                .padding(.leading, 44) // Align with message text
         }
     }
     
@@ -78,48 +78,47 @@ struct ChatBubble: View {
 }
 
 struct TypingIndicator: View {
-    @State private var animationPhase = 0
+    @State private var animateOpacity = false
     
     var body: some View {
-        HStack(alignment: .top, spacing: Constants.Design.smallPadding) {
-            // AI Avatar
-            Image(systemName: "fork.knife.circle.fill")
-                .font(.system(size: 24))
-                .foregroundColor(.primaryOrange)
-                .frame(width: 32, height: 32)
-                .background(
-                    Circle()
-                        .fill(Color.primaryOrange.opacity(0.1))
-                )
-            
-            HStack(spacing: 4) {
-                ForEach(0..<3) { index in
-                    Circle()
-                        .fill(Color.textSecondary)
-                        .frame(width: 8, height: 8)
-                        .scaleEffect((animationPhase == index ? 1.2 : 0.8).safeForCoreGraphics)
-                        .opacity((animationPhase == index ? 1.0 : 0.6).safeForCoreGraphics)
+        HStack {
+            HStack(alignment: .top, spacing: Constants.Design.smallPadding) {
+                // AI Avatar
+                Image(systemName: "fork.knife.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.primaryOrange)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(Color.primaryOrange.opacity(0.1))
+                    )
+                
+                HStack(spacing: 4) {
+                    ForEach(0..<3) { index in
+                        Circle()
+                            .fill(Color.textSecondary)
+                            .frame(width: 6, height: 6)
+                            .opacity(animateOpacity ? 0.3 : 1.0)
+                            .animation(
+                                .easeInOut(duration: 0.6)
+                                .repeatForever()
+                                .delay(Double(index) * 0.2),
+                                value: animateOpacity
+                            )
+                    }
                 }
+                .padding(.horizontal, Constants.Design.standardPadding)
+                .padding(.vertical, Constants.Design.smallPadding)
+                .background(
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(Color(.systemGray6))
+                )
             }
-            .padding(.horizontal, Constants.Design.standardPadding)
-            .padding(.vertical, Constants.Design.smallPadding)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color(.systemGray6))
-            )
             
             Spacer(minLength: 60)
         }
         .onAppear {
-            startAnimation()
-        }
-    }
-    
-    private func startAnimation() {
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            withAnimation(.easeInOut(duration: 0.3)) {
-                animationPhase = (animationPhase + 1) % 3
-            }
+            animateOpacity.toggle()
         }
     }
 }
