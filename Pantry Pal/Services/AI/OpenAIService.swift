@@ -66,7 +66,7 @@ class OpenAIService: NSObject, ObservableObject {
     }
     
     override init() {
-        guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+        guard let path = Bundle.main.path(forResource: "Config", ofType: "plist"),
               let plist = NSDictionary(contentsOfFile: path),
               let apiKey = plist["OPENAI_API_KEY"] as? String else {
             fatalError("Could not load OpenAI API key from GoogleService-Info.plist")
