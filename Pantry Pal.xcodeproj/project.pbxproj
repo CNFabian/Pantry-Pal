@@ -62,29 +62,11 @@
 			);
 			target = 126BBA7E2E034AE0006EEF32 /* Pantry PalTests */;
 		};
-		12EEF9472E035A75003D466E /* Exceptions for "Pantry Pal" folder in "Pantry PalTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"GoogleService-Info.plist",
-			);
-			target = 126BBA7E2E034AE0006EEF32 /* Pantry PalTests */;
-		};
-		12EEF9482E035A75003D466E /* Exceptions for "Pantry Pal" folder in "Pantry PalUITests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"GoogleService-Info.plist",
-			);
-			target = 126BBA882E034AE0006EEF32 /* Pantry PalUITests */;
-		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		126BBA6F2E034ADD006EEF32 /* Pantry Pal */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				12EEF9472E035A75003D466E /* Exceptions for "Pantry Pal" folder in "Pantry PalTests" target */,
-				12EEF9482E035A75003D466E /* Exceptions for "Pantry Pal" folder in "Pantry PalUITests" target */,
-			);
 			path = "Pantry Pal";
 			sourceTree = "<group>";
 		};
