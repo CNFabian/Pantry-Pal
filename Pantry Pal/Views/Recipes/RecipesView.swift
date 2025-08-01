@@ -79,8 +79,7 @@ struct RecipesView: View {
                 } else {
                     // Recipe list
                     List {
-                        ForEach(filteredRecipes.indices, id: \.self) { index in
-                            let recipe = filteredRecipes[index]
+                        ForEach(filteredRecipes, id: \.id) { recipe in
                             RecipeRow(recipe: recipe, canMake: canMakeRecipe(recipe))
                                 .onTapGesture {
                                     selectedRecipe = recipe
@@ -112,6 +111,8 @@ struct RecipesView: View {
                 RecipeGeneratorView()
             }
             .sheet(isPresented: $showingRecipeDetail) {
+                selectedRecipe = nil
+               } content: {
                 if let recipe = selectedRecipe {
                     SavedRecipeDetailView(recipe: recipe)
                 }
@@ -164,6 +165,7 @@ struct RecipesView: View {
             let recipe = filteredRecipes[index]
             recipeToDelete = recipe
             showingDeleteAlert = true
+            break // Handle one at a time for the alert
         }
     }
     

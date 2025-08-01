@@ -171,7 +171,6 @@ DerivedData/
 !default.perspectivev3
 
 # API Keys and Secrets - CRITICAL FOR SECURITY
-GoogleService-Info.plist
 Config.plist
 Secrets.plist
 *.env

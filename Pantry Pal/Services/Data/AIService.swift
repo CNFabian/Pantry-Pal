@@ -14,16 +14,26 @@ class AIService: ObservableObject {
     }
     
     init() {
-        guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
-              let plist = NSDictionary(contentsOfFile: path),
-              let apiKey = plist["OPENAI_API_KEY"] as? String,
-              !apiKey.isEmpty else {
-            fatalError("Couldn't load OPENAI_API_KEY from GoogleService-Info.plist")
+        // Try to load from Config.plist first (local development)
+        var apiKey: String?
+        
+        if let configPath = Bundle.main.path(forResource: "Config", ofType: "plist"),
+           let configPlist = NSDictionary(contentsOfFile: configPath),
+           let configApiKey = configPlist["OPENAI_API_KEY"] as? String {
+            apiKey = configApiKey
+            print("✅ AIService: Using OpenAI API key from Config.plist")
+        } else {
+            print("❌ Config.plist not found or missing OPENAI_API_KEY")
+            fatalError("Couldn't load OPENAI_API_KEY from Config.plist")
         }
         
-        print("✅ AIService: Initializing with API key: \(apiKey.prefix(10))...")
+        guard let validApiKey = apiKey, !validApiKey.isEmpty else {
+            fatalError("Couldn't load OPENAI_API_KEY from Config.plist")
+        }
         
-        self.openAI = OpenAI(apiToken: apiKey)
+        print("✅ AIService: Initializing with API key: \(validApiKey.prefix(10))...")
+        
+        self.openAI = OpenAI(apiToken: validApiKey)
     }
     
     // MARK: - Ingredient Cache Methods
@@ -76,34 +86,39 @@ class AIService: ObservableObject {
         IMPORTANT: Use "preparation" NOT "notes" for ingredient preparation notes.
         IMPORTANT: Use "duration" NOT "time" for instruction timing.
         
-        Return your response as valid JSON with this exact structure:
+        Return the recipe in the following JSON format:
         {
             "name": "Recipe Name",
             "description": "Brief description",
-            "prepTime": "15 minutes",
-            "cookTime": "30 minutes", 
-            "totalTime": "45 minutes",
             "servings": \(servings),
-            "difficulty": "Easy",
+            "difficulty": "Easy|Medium|Hard",
+            "prepTime": 15,
+            "cookTime": 30,
+            "totalTime": 45,
             "ingredients": [
                 {
                     "name": "ingredient name",
-                    "quantity": 1.5,
+                    "quantity": 2.0,
                     "unit": "cups",
-                    "preparation": "diced"
+                    "preparation": "chopped"
                 }
             ],
             "instructions": [
                 {
                     "stepNumber": 1,
-                    "instruction": "Step instruction",
-                    "duration": 5,
-                    "tip": "Helpful tip",
-                    "ingredients": ["ingredient1"],
-                    "equipment": ["pan"]
+                    "instruction": "Step description",
+                    "duration": 5
                 }
             ],
-            "tags": ["quick", "easy"]
+            "tags": ["tag1", "tag2"],
+            "cuisine": "cuisine type",
+            "nutritionInfo": {
+                "calories": 400,
+                "protein": 20,
+                "carbs": 45,
+                "fat": 15,
+                "fiber": 5
+            }
         }
         """
         
@@ -153,184 +168,6 @@ class AIService: ObservableObject {
         - Do NOT suggest recipes that require more of any ingredient than I have available
         - Consider the quantities when suggesting recipes
         - If an ingredient quantity is low, suggest recipes that use smaller amounts
-        
-        IMPORTANT: I ONLY want the names of 5 recipes, numbered 1-5.
-        ONLY provide the recipe names, nothing else.
-        No introductions, no descriptions, just a simple numbered list of 5 feasible recipes.
-        """
-        
-        do {
-            let query = ChatQuery(
-                messages: [.init(role: .user, content: prompt)!],
-                model: .gpt4_o_mini,
-                temperature: 0.7
-            )
-            
-            let result = try await openAI.chats(query: query)
-            
-            guard let text = result.choices.first?.message.content else {
-                throw AIServiceError.invalidResponse
-            }
-            
-            let recipes = text.components(separatedBy: .newlines)
-                .compactMap { (line: String) -> String? in
-                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return nil }
-                    
-                    // Remove numbering (1., 2., etc.)
-                    let cleanedLine = trimmed.replacingOccurrences(of: "^\\d+\\.\\s*", with: "", options: .regularExpression)
-                    return cleanedLine.isEmpty ? nil : cleanedLine
-                }
-                .filter { !$0.isEmpty }
-            
-            print("🤖 AIService: Parsed recipes: \(recipes)")
-            
-            return Array(recipes.prefix(5)) // Ensure we only return 5 recipes
-            
-        } catch {
-            print("❌ AIService: Error getting recipe suggestions: \(error)")
-            throw error
-        }
-    }
-
-    func getRecipeDetails(
-        recipeName: String,
-        ingredients: [Ingredient],
-        desiredServings: Int
-    ) async throws -> Recipe {
-        print("🤖 AIService: Getting recipe details for: \(recipeName)")
-        
-        let ingredientsText = formatIngredientsWithQuantities(ingredients)
-        
-        guard !ingredientsText.isEmpty else {
-            throw AIServiceError.noIngredientsAvailable
-        }
-        
-        let prompt = """
-        Create a detailed recipe for "\(recipeName)" using ONLY these ingredients with their available quantities:
-        \(ingredientsText)
-        
-        The recipe should be designed for \(desiredServings) servings.
-        
-        CRITICAL CONSTRAINTS:
-        - NEVER use more of any ingredient than what's available
-        - If the standard recipe calls for more than available, adjust the recipe size down
-        - Design the recipe specifically for \(desiredServings) servings
-        
-        IMPORTANT: Use "preparation" NOT "notes" for ingredient preparation notes.
-        IMPORTANT: Use "duration" NOT "time" for instruction timing.
-        
-        YOU MUST RESPOND WITH VALID JSON ONLY, with no text before or after. Do not include markdown code blocks.
-        
-        The JSON must follow this exact structure:
-        {
-          "recipe": {
-            "name": "\(recipeName)",
-            "description": "A brief description noting any quantity adjustments",
-            "prepTime": "X minutes",
-            "cookTime": "Y minutes", 
-            "totalTime": "Z minutes",
-            "servings": \(desiredServings),
-            "difficulty": "Easy",
-            "ingredients": [
-              {
-                "name": "Ingredient name",
-                "quantity": 1,
-                "unit": "cup",
-                "preparation": "chopped"
-              }
-            ],
-            "instructions": [
-              {
-                "stepNumber": 1,
-                "instruction": "Step instructions adjusted for \(desiredServings) servings",
-                "duration": 5,
-                "tip": "Helpful tip",
-                "ingredients": ["ingredient1", "ingredient2"],
-                "equipment": ["tool1", "tool2"]
-              }
-            ],
-            "tags": ["tag1", "tag2", "tag3"]
-          }
-        }
-        """
-        
-        do {
-            let query = ChatQuery(
-                messages: [.init(role: .user, content: prompt)!],
-                model: .gpt4_o_mini,
-                temperature: 0.2
-            )
-            
-            let result = try await openAI.chats(query: query)
-            
-            guard let responseText = result.choices.first?.message.content else {
-                throw AIServiceError.invalidResponse
-            }
-            
-            print("🤖 AIService: Raw response: \(responseText)")
-            
-            return try parseRecipeJSON(responseText)
-            
-        } catch {
-            print("❌ AIService: Error getting recipe details: \(error)")
-            throw error
-        }
-    }
-    
-    // MARK: - Recipe JSON Parsing
-    private func parseRecipeJSON(_ jsonString: String) throws -> Recipe {
-        print("🤖 AIService: Parsing recipe JSON")
-        
-        let cleanedString = jsonString
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        guard let data = cleanedString.data(using: .utf8) else {
-            print("❌ AIService: Failed to convert string to data")
-            throw AIServiceError.invalidResponse
-        }
-        
-        do {
-            let decoded = try JSONDecoder().decode(RecipeResponse.self, from: data)
-            print("✅ AIService: Successfully parsed recipe: \(decoded.recipe.name)")
-            return decoded.recipe.toRecipe()
-        } catch {
-            print("❌ AIService: JSON parsing error: \(error)")
-            print("❌ AIService: Raw JSON: \(cleanedString)")
-            throw AIServiceError.invalidResponse
-        }
-    }
-    
-    // MARK: - Recipe Options Generation
-    func generateRecipeOptions(
-        for mealType: String,
-        userPreferences: RecipePreferences?,
-        servings: Int = 4
-    ) async throws -> [String] {
-        print("🤖 AIService: Generating recipe options for \(mealType)")
-        
-        let ingredientsText = formatIngredientsFromCache()
-        
-        guard !ingredientsText.isEmpty else {
-            throw AIServiceError.noIngredientsAvailable
-        }
-        
-        let preferencesText = userPreferences?.toPromptString() ?? ""
-        
-        let prompt = """
-        I have these ingredients in my kitchen with the following quantities:
-        \(ingredientsText)
-        
-        Suggest 5 \(mealType) recipes I can make with these EXACT quantities for \(servings) servings.
-        \(preferencesText)
-        
-        CRITICAL REQUIREMENTS:
-        - Do NOT suggest recipes that require more of any ingredient than I have available
-        - Consider the quantities when suggesting recipes
-        - If an ingredient quantity is low, suggest recipes that use smaller amounts
         - Adjust serving sizes based on available ingredient quantities
         
         IMPORTANT: I ONLY want the names of 5 recipes, numbered 1-5.
@@ -359,95 +196,143 @@ class AIService: ObservableObject {
             print("🤖 AIService: Raw response: \(text)")
             
             // Parse the numbered list into an array of recipe names
-            let recipes = text.components(separatedBy: .newlines)
+            let recipes = text.components(separatedBy: CharacterSet.newlines)
                 .compactMap { line in
-                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let trimmed = line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                     // Remove numbering (1., 2., etc.)
                     let cleanedLine = trimmed.replacingOccurrences(of: "^\\d+\\.\\s*", with: "", options: .regularExpression)
                     return cleanedLine.isEmpty ? nil : cleanedLine
                 }
-                .filter { !$0.isEmpty }
             
-            print("🤖 AIService: Parsed recipes: \(recipes)")
+            print("🤖 AIService: Parsed \(recipes.count) recipes: \(recipes)")
             
-            return Array(recipes.prefix(5)) // Ensure we only return 5 recipes
+            return recipes
             
         } catch {
-            print("❌ AIService: Error generating recipe options: \(error)")
+            print("❌ AIService: Error getting recipe suggestions: \(error)")
+            throw AIServiceError.generationFailed
+        }
+    }
+    
+    func getRecipeSuggestionsFromCache(
+        mealType: String,
+        servings: Int = 4
+    ) async throws -> [String] {
+        print("🤖 AIService: Getting recipe suggestions for \(mealType) from cache")
+        
+        let ingredientsText = formatIngredientsFromCache()
+        
+        guard !ingredientsText.isEmpty else {
+            throw AIServiceError.noIngredientsAvailable
+        }
+        
+        let prompt = """
+        I have these ingredients in my kitchen:
+        \(ingredientsText)
+        
+        Suggest 5 \(mealType) recipes I can make with these ingredients for \(servings) servings.
+        
+        CRITICAL REQUIREMENTS:
+        - Do NOT suggest recipes that require more of any ingredient than I have available
+        - Consider the quantities when suggesting recipes
+        - If an ingredient quantity is low, suggest recipes that use smaller amounts
+        
+        IMPORTANT: I ONLY want the names of 5 recipes, numbered 1-5.
+        ONLY provide the recipe names, nothing else.
+        No introductions, no descriptions, just a simple numbered list of 5 feasible recipes.
+        """
+        
+        do {
+            let query = ChatQuery(
+                messages: [.init(role: .user, content: prompt)!],
+                model: .gpt4_o_mini,
+                temperature: 0.7
+            )
+            
+            let result = try await openAI.chats(query: query)
+            
+            guard let text = result.choices.first?.message.content else {
+                throw AIServiceError.invalidResponse
+            }
+            
+            let recipes = text.components(separatedBy: CharacterSet.newlines)
+                .compactMap { (line: String) -> String? in
+                    let trimmed = line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    
+                    // Remove numbering (1., 2., etc.)
+                    let cleanedLine = trimmed.replacingOccurrences(of: "^\\d+\\.\\s*", with: "", options: .regularExpression)
+                    return cleanedLine.isEmpty ? nil : cleanedLine
+                }
+            
+            return recipes
+        } catch {
+            print("❌ AIService: Error getting recipe suggestions: \(error)")
             throw error
         }
     }
     
-    // MARK: - FatSecret Recipe Adaptation
-    func adaptRecipeToAvailableIngredients(
-        recipe: FatSecretRecipeDetails,
+    // MARK: - Recipe Details Generation
+    func getRecipeDetails(
+        recipeName: String,
+        ingredients: [Ingredient],
         desiredServings: Int
     ) async throws -> Recipe {
-        print("🤖 AIService: Starting adaptRecipeToAvailableIngredients")
-        print("🤖 AIService: Recipe: \(recipe.recipe_name)")
-        print("🤖 AIService: Desired servings: \(desiredServings)")
+        print("🤖 AIService: Getting recipe details for: \(recipeName)")
         
-        let ingredientsText = formatIngredientsFromCache()
+        let ingredientsText = formatIngredientsWithQuantities(ingredients)
         
-        // Extract FatSecret recipe information properly
-        let recipeIngredients = recipe.ingredients?.ingredient.map { ing in
-            "\(ing.ingredient_description)"
-        }.joined(separator: "\n") ?? "No ingredients"
-        
-        let recipeDirections = recipe.directions?.direction.map { dir in
-            "\(dir.direction_number). \(dir.direction_description)"
-        }.joined(separator: "\n") ?? "Basic cooking instructions"
+        guard !ingredientsText.isEmpty else {
+            throw AIServiceError.noIngredientsAvailable
+        }
         
         let prompt = """
-        Adapt this FatSecret recipe to use ONLY the available ingredients from my pantry. 
-        Do not include any ingredients that are not listed below.
-        
-        Original Recipe: \(recipe.recipe_name)
-        Original Description: \(recipe.recipe_description ?? "No description")
-        Original Servings: \(recipe.number_of_servings ?? "Unknown")
-        Desired Servings: \(desiredServings)
-        
-        Original Ingredients:
-        \(recipeIngredients)
-        
-        Original Directions:
-        \(recipeDirections)
-        
-        Available Ingredients in My Pantry:
+        Create a detailed recipe for "\(recipeName)" using ONLY these ingredients with their available quantities:
         \(ingredientsText)
         
-        Create an adapted recipe for \(desiredServings) servings using ONLY my available ingredients.
-        You may substitute similar ingredients if exact matches aren't available.
-        Scale quantities appropriately for the desired serving size.
+        The recipe should be designed for \(desiredServings) servings.
         
-        Return your response as valid JSON with this exact structure:
+        CRITICAL CONSTRAINTS:
+        - NEVER use more of any ingredient than what's available
+        - If the standard recipe calls for more than available, adjust the recipe size down
+        - Design the recipe specifically for \(desiredServings) servings
+        
+        IMPORTANT: Use "preparation" NOT "notes" for ingredient preparation notes.
+        IMPORTANT: Use "duration" NOT "time" for instruction timing.
+        
+        Return the recipe in the following JSON format:
         {
-            "name": "\(recipe.recipe_name) (Adapted)",
-            "description": "Adapted version using available pantry ingredients",
-            "prepTime": "15 minutes",
-            "cookTime": "30 minutes", 
-            "totalTime": "45 minutes",
+            "name": "\(recipeName)",
+            "description": "Brief description of the dish",
             "servings": \(desiredServings),
-            "difficulty": "Easy",
+            "difficulty": "Easy|Medium|Hard",
+            "prepTime": 15,
+            "cookTime": 30,
+            "totalTime": 45,
             "ingredients": [
                 {
                     "name": "ingredient name",
-                    "quantity": 1.5,
+                    "quantity": 2.0,
                     "unit": "cups",
-                    "preparation": "diced"
+                    "preparation": "chopped"
                 }
             ],
             "instructions": [
                 {
                     "stepNumber": 1,
-                    "instruction": "Step instruction",
-                    "duration": 5,
-                    "tip": "Helpful tip",
-                    "ingredients": ["ingredient1"],
-                    "equipment": ["pan"]
+                    "instruction": "Step description",
+                    "duration": 5
                 }
             ],
-            "tags": ["adapted", "pantry-friendly"]
+            "tags": ["tag1", "tag2"],
+            "cuisine": "cuisine type",
+            "nutritionInfo": {
+                "calories": 400,
+                "protein": 20,
+                "carbs": 45,
+                "fat": 15,
+                "fiber": 5
+            }
         }
         """
         
@@ -455,7 +340,7 @@ class AIService: ObservableObject {
             let query = ChatQuery(
                 messages: [.init(role: .user, content: prompt)!],
                 model: .gpt4_o_mini,
-                temperature: 0.3
+                temperature: 0.7
             )
             
             let result = try await openAI.chats(query: query)
@@ -464,106 +349,13 @@ class AIService: ObservableObject {
                 throw AIServiceError.invalidResponse
             }
             
-            print("🤖 AIService: Adaptation response: \(responseText)")
+            print("🤖 AIService: Raw response: \(responseText)")
             
             return try parseRecipeJSON(responseText)
             
         } catch {
-            print("❌ AIService: Error adapting recipe: \(error)")
-            throw error
-        }
-    }
-    
-    // MARK: - Recipe Selection from FatSecret Results
-    func selectBestRecipes(
-        from recipeDetails: [FatSecretRecipeDetails],
-        for mealType: String,
-        userPreferences: RecipePreferences?
-    ) async throws -> [String] {
-        print("🤖 AIService: Selecting best recipes from \(recipeDetails.count) options")
-        
-        let ingredientsText = formatIngredientsFromCache()
-        
-        let recipeDescriptions = recipeDetails.map { recipe in
-            let ingredients = recipe.ingredients?.ingredient.map { $0.ingredient_description }.joined(separator: ", ") ?? "No ingredients listed"
-            return """
-            ID: \(recipe.recipe_id)
-            Name: \(recipe.recipe_name)
-            Description: \(recipe.recipe_description ?? "No description")
-            Ingredients: \(ingredients)
-            """
-        }.joined(separator: "\n\n")
-        
-        let prompt = """
-        I have these ingredients in my pantry:
-        \(ingredientsText)
-        
-        From the following FatSecret recipes, select the 5 BEST recipes for \(mealType) that:
-        1. Use ingredients I actually have available
-        2. Are appropriate for \(mealType)
-        3. Have most/all required ingredients available
-        4. \(userPreferences?.toPromptString() ?? "")
-        
-        Available Recipes:
-        \(recipeDescriptions)
-        
-        Score each recipe based on:
-        - Ingredient match percentage (how many required ingredients I have)
-        - Quantity feasibility (can I make it with my quantities?)
-        - Appropriateness for \(mealType)
-        
-        Return ONLY the recipe IDs of the top 5 recipes, one per line, like:
-        recipe_id_1
-        recipe_id_2
-        recipe_id_3
-        recipe_id_4
-        recipe_id_5
-        
-        No explanations, just the IDs.
-        """
-        
-        print("🤖 AIService: Sending prompt to OpenAI for recipe selection...")
-        
-        do {
-            let query = ChatQuery(
-                messages: [.init(role: .user, content: prompt)!],
-                model: .gpt4_o_mini,
-                temperature: 0.3
-            )
-            
-            let result = try await openAI.chats(query: query)
-            
-            guard let text = result.choices.first?.message.content else {
-                print("❌ AIService: Response text is nil")
-                throw AIServiceError.noResponse
-            }
-            
-            print("🤖 AIService: Response text: \(text)")
-            
-            let selectedIds = text.components(separatedBy: CharacterSet.newlines)
-                .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            
-            print("🤖 AIService: Parsed \(selectedIds.count) recipe IDs: \(selectedIds)")
-            
-            // Validate that the IDs actually exist in our recipe details
-            let validIds = selectedIds.filter { id in
-                recipeDetails.contains { $0.recipe_id == id }
-            }
-            
-            print("🤖 AIService: Found \(validIds.count) valid recipe IDs")
-            
-            // If no valid IDs, fall back to first few recipes
-            if validIds.isEmpty {
-                print("⚠️ AIService: No valid IDs found, falling back to first few recipes")
-                let fallbackIds = Array(recipeDetails.prefix(5)).map { $0.recipe_id }
-                return fallbackIds
-            }
-            
-            return validIds
-        } catch {
-            print("❌ AIService: Error in selectBestRecipes: \(error)")
-            throw error
+            print("❌ AIService: Error generating recipe details: \(error)")
+            throw AIServiceError.generationFailed
         }
     }
     
@@ -585,14 +377,10 @@ class AIService: ObservableObject {
         Based on the cooking methods and techniques described, list ALL the tools and equipment needed.
         Include basic items like knives, cutting boards, measuring cups if they're needed.
         
-        Return ONLY a simple list of tools, one per line, like:
-        Large skillet
-        Cutting board
-        Chef's knife
-        Measuring cups
-        Wooden spoon
+        Return ONLY a comma-separated list of tools, like:
+        large pot, wooden spoon, cutting board, chef's knife, measuring cups
         
-        No explanations, no formatting, just the tool names.
+        No explanations or formatting, just the tool names separated by commas.
         """
         
         do {
@@ -608,52 +396,60 @@ class AIService: ObservableObject {
                 throw AIServiceError.noResponse
             }
             
-            let tools = text.components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let tools = text.components(separatedBy: ",")
+                .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             
-            print("🔧 AIService: Found \(tools.count) cooking tools: \(tools)")
+            print("🔧 AIService: Generated \(tools.count) cooking tools: \(tools)")
+            
             return tools
             
         } catch {
-            print("❌ AIService: Error analyzing cooking tools: \(error)")
-            throw error
+            print("❌ AIService: Error generating cooking tools: \(error)")
+            throw AIServiceError.generationFailed
+        }
+    }
+    
+    // MARK: - JSON Parsing
+    private func parseRecipeJSON(_ jsonString: String) throws -> Recipe {
+        // Clean the JSON string by removing markdown code blocks if present
+        let cleanedJSON = jsonString
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        
+        guard let data = cleanedJSON.data(using: .utf8) else {
+            throw AIServiceError.invalidResponse
+        }
+        
+        do {
+            let decodedRecipe = try JSONDecoder().decode(Recipe.self, from: data)
+            return decodedRecipe
+        } catch {
+            print("❌ AIService: JSON parsing error: \(error)")
+            print("❌ AIService: Raw JSON: \(cleanedJSON)")
+            throw AIServiceError.invalidResponse
         }
     }
 }
 
-// MARK: - Error Handling
+// MARK: - Error Types
 enum AIServiceError: LocalizedError {
-    case noResponse
-    case invalidResponse
     case noIngredientsAvailable
-    case rateLimitExceeded
-    case networkError(String)
-    case networkConnectionFailed
-    case apiKeyInvalid
-    case cacheNotReady
     case generationFailed
+    case invalidResponse
+    case noResponse
     
     var errorDescription: String? {
         switch self {
-        case .noResponse:
-            return "No response from AI service"
-        case .invalidResponse:
-            return "Invalid response format from AI service"
         case .noIngredientsAvailable:
-            return "No ingredients available in pantry"
-        case .rateLimitExceeded:
-            return "Rate limit exceeded. Please try again later."
-        case .networkError(let message):
-            return "Network error: \(message)"
-        case .networkConnectionFailed:
-            return "Network connection failed. Please check your internet connection."
-        case .apiKeyInvalid:
-            return "API configuration error. Please contact support."
-        case .cacheNotReady:
-            return "Ingredient cache is not ready. Please try again."
+            return "No ingredients available in your pantry"
         case .generationFailed:
-            return "Failed to generate content. Please try again."
+            return "Failed to generate recipe"
+        case .invalidResponse:
+            return "Invalid response from AI service"
+        case .noResponse:
+            return "No response received from AI service"
         }
     }
 }

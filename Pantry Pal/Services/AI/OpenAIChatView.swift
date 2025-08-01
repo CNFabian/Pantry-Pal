@@ -45,7 +45,7 @@ struct OpenAIChatView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button("Clear Chat") {
-                            openAIService.clearConversation()
+                            clearConversation()
                         }
                         
                         Button(openAIService.isSpeaking ? "Stop Speaking" : "Settings") {
@@ -90,7 +90,7 @@ struct OpenAIChatView: View {
             }
             
             Button("Retry") {
-                openAIService.clearConversation()
+                clearConversation()
             }
             .buttonStyle(.borderedProminent)
             .tint(.primaryOrange)
@@ -242,7 +242,7 @@ struct OpenAIChatView: View {
     
     private var voiceButton: some View {
         Button {
-            openAIService.toggleListening()
+            toggleListening()
         } label: {
             Image(systemName: openAIService.isListening ? "stop.circle.fill" : "mic.circle.fill")
                 .font(.system(size: 50))
@@ -272,6 +272,7 @@ struct OpenAIChatView: View {
         }
     }
     
+    // MARK: - Actions
     private func sendTextMessage() {
         let text = messageText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
@@ -280,6 +281,21 @@ struct OpenAIChatView: View {
         Task {
             await openAIService.sendMessage(text)
         }
+    }
+    
+    private func toggleListening() {
+        if openAIService.isListening {
+            openAIService.stopListening()
+        } else {
+            openAIService.startListening()
+        }
+    }
+    
+    private func clearConversation() {
+        openAIService.conversationHistory.removeAll()
+        openAIService.stopSpeaking()
+        openAIService.stopListening()
+        openAIService.connectionStatus = .ready
     }
 }
 
@@ -345,22 +361,13 @@ struct PantryChatBubble: View {
             Text(formatTime(message.timestamp))
                 .font(.caption2)
                 .foregroundColor(.textSecondary)
-                .padding(.leading, 40)
+                .padding(.leading, 44)
         }
     }
     
     private func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.timeStyle = .short
+        formatter.dateFormat = "h:mm a"
         return formatter.string(from: date)
     }
-}
-
-#Preview {
-    OpenAIChatView()
-        .environmentObject(FatSecretService())
-        .environmentObject(FirestoreService())
-        .environmentObject(AuthenticationService())
-        .environmentObject(IngredientCacheService.shared)
-        .environmentObject(SettingsService())
 }

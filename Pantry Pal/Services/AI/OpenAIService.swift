@@ -9,6 +9,14 @@ import AVFoundation
 import Speech
 import FirebaseFirestore
 
+// MARK: - Custom Chat Message Model
+struct PantryChatMessage: Identifiable, Codable {
+    let id = UUID()
+    let text: String
+    let isUser: Bool
+    let timestamp: Date
+}
+
 @MainActor
 class OpenAIService: NSObject, ObservableObject {
     private let openAI: OpenAI
@@ -66,13 +74,24 @@ class OpenAIService: NSObject, ObservableObject {
     }
     
     override init() {
-        guard let path = Bundle.main.path(forResource: "Config", ofType: "plist"),
-              let plist = NSDictionary(contentsOfFile: path),
-              let apiKey = plist["OPENAI_API_KEY"] as? String else {
-            fatalError("Could not load OpenAI API key from GoogleService-Info.plist")
+        // Try to load from Config.plist first (local development)
+        var apiKey: String?
+        
+        if let configPath = Bundle.main.path(forResource: "Config", ofType: "plist"),
+           let configPlist = NSDictionary(contentsOfFile: configPath),
+           let configApiKey = configPlist["OPENAI_API_KEY"] as? String {
+            apiKey = configApiKey
+            print("✅ Using OpenAI API key from Config.plist")
+        } else {
+            print("❌ Config.plist not found or missing OPENAI_API_KEY")
+            fatalError("Could not load OpenAI API key. Please ensure Config.plist exists with valid OPENAI_API_KEY")
         }
         
-        self.openAI = OpenAI(apiToken: apiKey)
+        guard let validApiKey = apiKey else {
+            fatalError("Could not load OpenAI API key from Config.plist")
+        }
+        
+        self.openAI = OpenAI(apiToken: validApiKey)
         
         super.init()
         
@@ -207,14 +226,15 @@ class OpenAIService: NSObject, ObservableObject {
                     }
                     
                     if let error = error {
-                        print("❌ Speech recognition error: \(error)")
+                        print("Speech recognition error: \(error.localizedDescription)")
                         self.stopListening()
+                        self.connectionStatus = .error("Speech recognition failed")
                     }
                 }
             }
             
             let recordingFormat = inputNode.outputFormat(forBus: 0)
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, when in
                 recognitionRequest.append(buffer)
             }
             
@@ -226,8 +246,8 @@ class OpenAIService: NSObject, ObservableObject {
             speechRecognitionText = ""
             
         } catch {
-            print("❌ Failed to start speech recognition: \(error)")
-            connectionStatus = .error("Failed to start listening")
+            print("Speech recognition setup failed: \(error.localizedDescription)")
+            connectionStatus = .error("Speech setup failed")
         }
     }
     
@@ -236,9 +256,9 @@ class OpenAIService: NSObject, ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         
         recognitionRequest?.endAudio()
-        recognitionRequest = nil
-        
         recognitionTask?.cancel()
+        
+        recognitionRequest = nil
         recognitionTask = nil
         
         isListening = false
@@ -246,46 +266,30 @@ class OpenAIService: NSObject, ObservableObject {
         if connectionStatus == .listeningForSpeech {
             connectionStatus = .ready
         }
-        
-        speechRecognitionText = ""
-        
-        // Reset audio session
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("⚠️ Failed to deactivate audio session: \(error)")
-        }
     }
     
-    func toggleListening() {
-        if isListening {
-            stopListening()
-        } else {
-            startListening()
-        }
-    }
-    
-    // MARK: - Speech Functions
-    private func speak(_ text: String) {
-        // Simple speech without dependency on settingsService
+    // MARK: - Text-to-Speech
+    func speak(_ text: String) {
+        // Simple TTS without settings dependency
         guard !text.isEmpty else { return }
         
-        connectionStatus = .speaking
-        isSpeaking = true
-        
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = 0.5
-        utterance.pitchMultiplier = 1.0
-        utterance.volume = 1.0
-        
-        speechSynthesizer.speak(utterance)
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.isSpeaking = false
-            if self.connectionStatus == .speaking {
-                self.connectionStatus = .ready
-            }
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+            
+            let utterance = AVSpeechUtterance(string: text)
+            utterance.voice = AVSpeechSynthesisVoice(language: "en-US") ?? AVSpeechSynthesisVoice.speechVoices().first
+            utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.1
+            utterance.pitchMultiplier = 1.1
+            
+            isSpeaking = true
+            connectionStatus = .speaking
+            speechSynthesizer.speak(utterance)
+            
+        } catch {
+            print("⚠️ TTS configuration failed: \(error.localizedDescription)")
+            isSpeaking = false
+            connectionStatus = .ready
         }
     }
     
@@ -297,302 +301,11 @@ class OpenAIService: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Pantry Intent Processing
-    private func processPantryIntent(from userMessage: String, response: String) async {
-        let message = userMessage.lowercased()
-        
-        // Simple intent detection patterns
-        if message.contains("add") || message.contains("bought") || message.contains("got") || message.contains("new") {
-            await handleAddIngredientIntent(userMessage)
-        } else if message.contains("update") || message.contains("change") || message.contains("used") || message.contains("ate") {
-            await handleUpdateIngredientIntent(userMessage)
-        } else if message.contains("delete") || message.contains("remove") || message.contains("finished") || message.contains("out of") {
-            await handleDeleteIngredientIntent(userMessage)
-        } else if message.contains("what") || message.contains("show") || message.contains("list") {
-            await handleListIngredientsIntent()
-        }
-    }
-    
-    private func handleAddIngredientIntent(_ message: String) async {
-        // Extract ingredient details using simple pattern matching
-        // This is a simplified version - you might want to use more sophisticated NLP
-        
-        let words = message.components(separatedBy: .whitespaces)
-        var ingredientName = ""
-        var quantity: Double = 1.0
-        var unit = "piece"
-        
-        // Simple extraction logic
-        for (index, word) in words.enumerated() {
-            if let number = Double(word) {
-                quantity = number
-                if index + 1 < words.count {
-                    let nextWord = words[index + 1]
-                    if ["cups", "cup", "tbsp", "tsp", "oz", "lb", "lbs", "pounds", "grams", "kg"].contains(nextWord.lowercased()) {
-                        unit = nextWord
-                    }
-                }
-            } else if !["add", "bought", "got", "new", "i", "have", "some", "a", "an", "the"].contains(word.lowercased()) {
-                if ingredientName.isEmpty {
-                    ingredientName = word
-                } else {
-                    ingredientName += " " + word
-                }
-            }
-        }
-        
-        if !ingredientName.isEmpty {
-            pendingPantryAction = .addIngredient(
-                name: ingredientName.capitalized,
-                quantity: quantity,
-                unit: unit,
-                category: "Other",
-                expirationDate: nil
-            )
-            
-            await executePantryAction()
-        }
-    }
-    
-    private func handleUpdateIngredientIntent(_ message: String) async {
-        // Similar extraction logic for updates
-        let words = message.components(separatedBy: .whitespaces)
-        var ingredientName = ""
-        var quantity: Double = 0.0
-        
-        for (index, word) in words.enumerated() {
-            if let number = Double(word) {
-                quantity = number
-            } else if !["update", "change", "used", "ate", "i", "have", "now", "left", "remaining"].contains(word.lowercased()) {
-                if ingredientName.isEmpty {
-                    ingredientName = word
-                } else {
-                    ingredientName += " " + word
-                }
-            }
-        }
-        
-        if !ingredientName.isEmpty && quantity > 0 {
-            pendingPantryAction = .updateQuantity(name: ingredientName.capitalized, newQuantity: quantity)
-            await executePantryAction()
-        }
-    }
-    
-    private func handleDeleteIngredientIntent(_ message: String) async {
-        let words = message.components(separatedBy: .whitespaces)
-        var ingredientName = ""
-        
-        for word in words {
-            if !["delete", "remove", "finished", "out", "of", "i", "am", "the", "all", "my"].contains(word.lowercased()) {
-                if ingredientName.isEmpty {
-                    ingredientName = word
-                } else {
-                    ingredientName += " " + word
-                }
-            }
-        }
-        
-        if !ingredientName.isEmpty {
-            pendingPantryAction = .deleteIngredient(name: ingredientName.capitalized)
-            await executePantryAction()
-        }
-    }
-    
-    private func handleListIngredientsIntent() async {
-        guard let firestoreService = firestoreService,
-              let userId = authService?.user?.id else { return }
-        
-        do {
-            await firestoreService.loadIngredients(for: userId)
-            let ingredients = firestoreService.ingredients.filter { !$0.inTrash }
-            
-            if ingredients.isEmpty {
-                let response = "Your pantry is currently empty! Would you like to add some ingredients? 📦"
-                let aiMessage = PantryChatMessage(text: response, isUser: false, timestamp: Date())
-                conversationHistory.append(aiMessage)
-                speak(response)
-            } else {
-                let ingredientList = ingredients.map { "\($0.name): \($0.displayQuantity) \($0.unit)" }.joined(separator: ", ")
-                let response = "Here's what you have in your pantry: \(ingredientList) 🥘"
-                let aiMessage = PantryChatMessage(text: response, isUser: false, timestamp: Date())
-                conversationHistory.append(aiMessage)
-                speak(response)
-            }
-        } catch {
-            let errorMessage = "I had trouble checking your pantry. Please try again!"
-            let aiMessage = PantryChatMessage(text: errorMessage, isUser: false, timestamp: Date())
-            conversationHistory.append(aiMessage)
-            speak(errorMessage)
-        }
-    }
-    
-    private func executePantryAction() async {
-        guard let action = pendingPantryAction,
-              let firestoreService = firestoreService,
-              let userId = authService?.user?.id else { return }
-        
-        do {
-            switch action {
-            case .addIngredient(let name, let quantity, let unit, let category, let expirationDate):
-                let timestamp = expirationDate != nil ? Timestamp(date: expirationDate!) : nil
-                let ingredient = Ingredient(
-                    name: name,
-                    quantity: quantity,
-                    unit: unit,
-                    category: category,
-                    expirationDate: timestamp,
-                    userId: userId
-                )
-                try await firestoreService.addIngredient(ingredient)
-                
-                let successMessage = "Great! I added \(quantity.safeForDisplay) \(unit) of \(name) to your pantry! 🎉"
-                let aiMessage = PantryChatMessage(text: successMessage, isUser: false, timestamp: Date())
-                conversationHistory.append(aiMessage)
-                speak(successMessage)
-                
-            case .updateQuantity(let name, let newQuantity):
-                if let ingredient = await findIngredientByName(name, firestoreService: firestoreService) {
-                    // Create a new ingredient with updated quantity since properties are let constants
-                    let updatedIngredient = Ingredient(
-                        id: ingredient.id,
-                        name: ingredient.name,
-                        quantity: newQuantity,
-                        unit: ingredient.unit,
-                        category: ingredient.category,
-                        expirationDate: ingredient.expirationDate,
-                        dateAdded: ingredient.dateAdded,
-                        notes: ingredient.notes,
-                        inTrash: ingredient.inTrash,
-                        trashedAt: ingredient.trashedAt,
-                        createdAt: ingredient.createdAt,
-                        updatedAt: Timestamp(date: Date()),
-                        userId: ingredient.userId,
-                        fatSecretFoodId: ingredient.fatSecretFoodId,
-                        brandName: ingredient.brandName,
-                        barcode: ingredient.barcode,
-                        nutritionInfo: ingredient.nutritionInfo,
-                        servingInfo: ingredient.servingInfo
-                    )
-                    try await firestoreService.updateIngredient(updatedIngredient)
-                    
-                    let successMessage = "Perfect! I updated your \(name) to \(newQuantity.safeForDisplay) \(ingredient.unit)! ✅"
-                    let aiMessage = PantryChatMessage(text: successMessage, isUser: false, timestamp: Date())
-                    conversationHistory.append(aiMessage)
-                    speak(successMessage)
-                } else {
-                    let errorMessage = "I couldn't find \(name) in your pantry. Would you like to add it instead?"
-                    let aiMessage = PantryChatMessage(text: errorMessage, isUser: false, timestamp: Date())
-                    conversationHistory.append(aiMessage)
-                    speak(errorMessage)
-                }
-                
-            case .deleteIngredient(let name):
-                if let ingredient = await findIngredientByName(name, firestoreService: firestoreService) {
-                    try await firestoreService.deleteIngredient(ingredient.id!)
-                    
-                    let successMessage = "Done! I removed \(name) from your pantry! 🗑️"
-                    let aiMessage = PantryChatMessage(text: successMessage, isUser: false, timestamp: Date())
-                    conversationHistory.append(aiMessage)
-                    speak(successMessage)
-                } else {
-                    let errorMessage = "I couldn't find \(name) in your pantry to remove."
-                    let aiMessage = PantryChatMessage(text: errorMessage, isUser: false, timestamp: Date())
-                    conversationHistory.append(aiMessage)
-                    speak(errorMessage)
-                }
-                
-            case .editIngredient(let currentName, let newName, let quantity, let unit, let category, let expirationDate):
-                if let ingredient = await findIngredientByName(currentName, firestoreService: firestoreService) {
-                    let timestamp = expirationDate != nil ? Timestamp(date: expirationDate!) : ingredient.expirationDate
-                    
-                    let updatedIngredient = Ingredient(
-                        id: ingredient.id,
-                        name: newName ?? ingredient.name,
-                        quantity: quantity ?? ingredient.quantity,
-                        unit: unit ?? ingredient.unit,
-                        category: category ?? ingredient.category,
-                        expirationDate: timestamp,
-                        dateAdded: ingredient.dateAdded,
-                        notes: ingredient.notes,
-                        inTrash: ingredient.inTrash,
-                        trashedAt: ingredient.trashedAt,
-                        createdAt: ingredient.createdAt,
-                        updatedAt: Timestamp(date: Date()),
-                        userId: ingredient.userId,
-                        fatSecretFoodId: ingredient.fatSecretFoodId,
-                        brandName: ingredient.brandName,
-                        barcode: ingredient.barcode,
-                        nutritionInfo: ingredient.nutritionInfo,
-                        servingInfo: ingredient.servingInfo
-                    )
-                    
-                    try await firestoreService.updateIngredient(updatedIngredient)
-                    
-                    let successMessage = "Great! I updated your \(currentName) successfully! ✨"
-                    let aiMessage = PantryChatMessage(text: successMessage, isUser: false, timestamp: Date())
-                    conversationHistory.append(aiMessage)
-                    speak(successMessage)
-                } else {
-                    let errorMessage = "I couldn't find \(currentName) in your pantry to edit."
-                    let aiMessage = PantryChatMessage(text: errorMessage, isUser: false, timestamp: Date())
-                    conversationHistory.append(aiMessage)
-                    speak(errorMessage)
-                }
-            }
-        } catch {
-            let errorMessage = "I had trouble updating your pantry. Please try again!"
-            let aiMessage = PantryChatMessage(text: errorMessage, isUser: false, timestamp: Date())
-            conversationHistory.append(aiMessage)
-            speak(errorMessage)
-        }
-        
-        pendingPantryAction = nil
-    }
-    
-    private func findIngredientByName(_ name: String, firestoreService: FirestoreService) async -> Ingredient? {
-        guard let userId = authService?.user?.id else { return nil }
-        
-        do {
-            await firestoreService.loadIngredients(for: userId)
-            return firestoreService.ingredients.first { ingredient in
-                ingredient.name.lowercased() == name.lowercased() && !ingredient.inTrash
-            }
-        } catch {
-            print("Error finding ingredient: \(error)")
-            return nil
-        }
-    }
-    
-    // MARK: - Audio Session and Authorization
-    private func requestSpeechAuthorization() {
-        SFSpeechRecognizer.requestAuthorization { authStatus in
-            DispatchQueue.main.async {
-                switch authStatus {
-                case .authorized:
-                    print("✅ Speech recognition authorized")
-                case .denied:
-                    print("❌ Speech recognition denied")
-                    self.connectionStatus = .error("Speech recognition denied")
-                case .restricted:
-                    print("❌ Speech recognition restricted")
-                    self.connectionStatus = .error("Speech recognition restricted")
-                case .notDetermined:
-                    print("❌ Speech recognition not determined")
-                    self.connectionStatus = .error("Speech recognition not available")
-                @unknown default:
-                    print("❌ Speech recognition unknown status")
-                    self.connectionStatus = .error("Speech recognition not available")
-                }
-            }
-        }
-    }
-    
+    // MARK: - Audio Session Configuration
     private func configureAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord,
-                                       mode: .default,
-                                       options: [.defaultToSpeaker, .allowBluetooth])
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
             print("✅ Audio session configured successfully")
         } catch {
@@ -601,9 +314,25 @@ class OpenAIService: NSObject, ObservableObject {
         }
     }
     
+    private func requestSpeechAuthorization() {
+        SFSpeechRecognizer.requestAuthorization { authStatus in
+            DispatchQueue.main.async {
+                switch authStatus {
+                case .authorized:
+                    print("✅ Speech recognition authorized")
+                case .denied, .restricted, .notDetermined:
+                    print("⚠️ Speech recognition not authorized: \(authStatus)")
+                    self.connectionStatus = .error("Speech recognition not authorized")
+                @unknown default:
+                    print("⚠️ Unknown speech recognition authorization status")
+                }
+            }
+        }
+    }
+    
     private func validateConfiguration() {
-        guard let _ = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") else {
-            print("❌ ERROR: GoogleService-Info.plist not found")
+        guard let _ = Bundle.main.path(forResource: "Config", ofType: "plist") else {
+            print("❌ ERROR: Config.plist not found")
             connectionStatus = .error("Configuration file missing")
             return
         }
@@ -611,41 +340,121 @@ class OpenAIService: NSObject, ObservableObject {
         print("✅ OpenAIService initialized successfully")
     }
     
-    // MARK: - Conversation Management
-    func clearConversation() {
-        conversationHistory.removeAll()
-        conversationMessages.removeAll()
+    // MARK: - Pantry Integration
+    private func processPantryIntent(from userMessage: String, response: String) async {
+        // Simple intent detection based on keywords and AI response
+        let lowercasedMessage = userMessage.lowercased()
+        let lowercasedResponse = response.lowercased()
         
-        // Re-add system prompt
-        let systemPrompt = """
-        You are Pantry Pal, a friendly and bubbly AI assistant for a pantry management app!
+        if (lowercasedMessage.contains("add") || lowercasedMessage.contains("bought") || lowercasedMessage.contains("got")) &&
+           (lowercasedResponse.contains("add") || lowercasedResponse.contains("pantry")) {
+            
+            // Extract ingredient information using basic parsing
+            await extractAndAddIngredient(from: userMessage)
+            
+        } else if (lowercasedMessage.contains("used") || lowercasedMessage.contains("update")) &&
+                  (lowercasedResponse.contains("update") || lowercasedResponse.contains("quantity")) {
+            
+            await extractAndUpdateQuantity(from: userMessage)
+            
+        } else if (lowercasedMessage.contains("finished") || lowercasedMessage.contains("remove") || lowercasedMessage.contains("delete")) &&
+                  (lowercasedResponse.contains("remove") || lowercasedResponse.contains("delete")) {
+            
+            await extractAndRemoveIngredient(from: userMessage)
+        }
+    }
+    
+    private func extractAndAddIngredient(from message: String) async {
+        // Basic ingredient extraction - this could be enhanced with more sophisticated NLP
+        let words = message.lowercased().components(separatedBy: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
         
-        Your main job is to help users manage their pantry ingredients and suggest recipes. You can:
+        // Look for quantity patterns
+        var quantity: Double = 1.0
+        var ingredientName = ""
+        var unit = ""
         
-        1. **Add ingredients**: When users say things like "I bought some apples" or "Add 2 cups of flour to my pantry"
-        2. **Update quantities**: When they say "I used half of my milk" or "Update my rice to 1 cup"  
-        3. **Delete ingredients**: When they say "I finished the eggs" or "Remove the expired bread"
-        4. **Answer pantry questions**: "What ingredients do I have?" or "Do I have enough for pasta?"
-        5. **Suggest recipes**: "What can I cook for dinner?" or "Recipe ideas with chicken and rice"
-        6. **General cooking help**: Cooking tips, substitutions, meal planning advice
+        for (index, word) in words.enumerated() {
+            if let num = Double(word) {
+                quantity = num
+                if index + 1 < words.count {
+                    unit = words[index + 1]
+                }
+                if index + 2 < words.count {
+                    ingredientName = words[index + 2]
+                }
+                break
+            }
+        }
         
-        Always be enthusiastic, helpful, and encouraging! Use a warm, friendly tone with appropriate emojis. 
+        // If no quantity found, look for ingredient names
+        if ingredientName.isEmpty {
+            let commonIngredients = ["apple", "apples", "milk", "bread", "eggs", "cheese", "chicken", "rice", "pasta"]
+            for ingredient in commonIngredients {
+                if words.contains(ingredient) {
+                    ingredientName = ingredient
+                    break
+                }
+            }
+        }
         
-        When users want to modify their pantry, respond conversationally first, then I'll handle the actual pantry updates.
+        if !ingredientName.isEmpty {
+            pendingPantryAction = .addIngredient(
+                name: ingredientName.capitalized,
+                quantity: quantity,
+                unit: unit.isEmpty ? "units" : unit,
+                category: "Other",
+                expirationDate: Calendar.current.date(byAdding: .day, value: 7, to: Date())
+            )
+        }
+    }
+    
+    private func extractAndUpdateQuantity(from message: String) async {
+        // Similar extraction logic for updates
+        let words = message.lowercased().components(separatedBy: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
         
-        Keep responses concise but helpful - aim for 1-3 sentences unless they ask for detailed recipes or instructions.
-        """
+        var quantity: Double = 0.0
+        var ingredientName = ""
         
-        conversationMessages.append(.init(role: .system, content: systemPrompt)!)
-        currentResponse = ""
-        connectionStatus = .ready
+        for (index, word) in words.enumerated() {
+            if let num = Double(word) {
+                quantity = num
+                break
+            }
+        }
+        
+        let commonIngredients = ["milk", "rice", "flour", "sugar", "oil"]
+        for ingredient in commonIngredients {
+            if words.contains(ingredient) {
+                ingredientName = ingredient
+                break
+            }
+        }
+        
+        if !ingredientName.isEmpty && quantity > 0 {
+            pendingPantryAction = .updateQuantity(name: ingredientName.capitalized, newQuantity: quantity)
+        }
+    }
+    
+    private func extractAndRemoveIngredient(from message: String) async {
+        let words = message.lowercased().components(separatedBy: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+        
+        let commonIngredients = ["eggs", "bread", "milk", "cheese", "apples"]
+        for ingredient in commonIngredients {
+            if words.contains(ingredient) {
+                pendingPantryAction = .deleteIngredient(name: ingredient.capitalized)
+                break
+            }
+        }
     }
 }
 
-// MARK: - Custom Chat Message Model
-struct PantryChatMessage: Identifiable, Codable {
-    let id = UUID()
-    let text: String
-    let isUser: Bool
-    let timestamp: Date
+extension OpenAIService: AVSpeechSynthesizerDelegate {
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async {
+            self.isSpeaking = false
+            if self.connectionStatus == .speaking {
+                self.connectionStatus = .ready
+            }
+        }
+    }
 }
