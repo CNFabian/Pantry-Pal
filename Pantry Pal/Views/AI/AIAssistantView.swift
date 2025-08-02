@@ -69,7 +69,11 @@ struct AIAssistantView: View {
                     .shadow(color: Color.blue.opacity(0.5), radius: pulseAnimation ? 30 : 20)
                     .scaleEffect(pulseAnimation ? 1.05 : 1.0)
                     .onTapGesture {
-                        viewModel.toggleListening()
+                        if viewModel.isListening {
+                            viewModel.stopListening()
+                        } else {
+                            viewModel.startListening()
+                        }
                     }
                 
                 // Microphone icon in center of circle
