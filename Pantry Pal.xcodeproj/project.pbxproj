@@ -48,6 +48,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1295B4AB2E3D6B00007ABF47 /* Exceptions for "Pantry Pal" folder in "Pantry Pal" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Pantry-Pal-Info.plist",
+			);
+			target = 126BBA6C2E034ADD006EEF32 /* Pantry Pal */;
+		};
 		12DF5D262E052D1500527FCF /* Exceptions for "Pantry PalTests" folder in "Pantry Pal" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -67,6 +74,9 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		126BBA6F2E034ADD006EEF32 /* Pantry Pal */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1295B4AB2E3D6B00007ABF47 /* Exceptions for "Pantry Pal" folder in "Pantry Pal" target */,
+			);
 			path = "Pantry Pal";
 			sourceTree = "<group>";
 		};
@@ -472,6 +482,7 @@
 				DEVELOPMENT_TEAM = T74UPA9Q22;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Pantry-Pal-Info.plist";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera access to scan barcodes for adding ingredients.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to chat with your AI pantry assistant using voice commands.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app needs speech recognition to understand your voice commands about food and pantry management.";
@@ -504,6 +515,7 @@
 				DEVELOPMENT_TEAM = T74UPA9Q22;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Pantry-Pal-Info.plist";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera access to scan barcodes for adding ingredients.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to chat with your AI pantry assistant using voice commands.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app needs speech recognition to understand your voice commands about food and pantry management.";

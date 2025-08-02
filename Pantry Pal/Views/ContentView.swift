@@ -54,58 +54,8 @@ struct MainTabView: View {
     @StateObject private var openAIService = OpenAIService()
     
     var body: some View {
-        TabView {
-            IngredientsListView()
-                .tabItem {
-                    Image(systemName: "list.bullet")
-                    Text("Pantry")
-                }
-            
-            RecipesView()
-                .tabItem {
-                    Image(systemName: "book.fill")
-                    Text("Recipes")
-                }
-            
-            NavigationView {
-                OpenAIChatView()
-                    .navigationTitle("AI Chat")
-            }
-            .tabItem {
-                Image(systemName: "message.fill")
-                Text("AI Chat")
-            }
-            .environmentObject(fatSecretService)
-            .environmentObject(settingsService)
-            
-            NotificationsView()
-                .tabItem {
-                    Image(systemName: "bell.fill")
-                    Text("Alerts")
-                }
-            
-            ProfileView()
-                .tabItem {
-                    Image(systemName: "person.fill")
-                    Text("Profile")
-                }
-        }
-        .accentColor(.primaryOrange)
-        .onAppear {
-            openAIService.configure(firestoreService: firestoreService, authService: authService)
-            openAIService.setSettingsService(settingsService)
-            loadInitialData()
-            print("🐛 DEBUG: MainTabView appeared")
-            if let userId = authService.user?.id {
-                Task {
-                    await firestoreService.loadIngredients(for: userId)
-                    await firestoreService.loadRecipes(for: userId)
-                    // Remove loadNotifications call since method doesn't exist
-                    await settingsService.loadUserSettings()
-                    
-                    recipeService.startListening()
-                }
-            }
+        NavigationView {
+            AIAssistantView()
         }
     }
     
