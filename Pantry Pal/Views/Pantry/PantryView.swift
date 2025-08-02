@@ -1,3 +1,8 @@
+//
+//  PantryView.swift
+//  Pantry Pal
+//
+
 import SwiftUI
 
 struct PantryView: View {
@@ -7,15 +12,18 @@ struct PantryView: View {
     var body: some View {
         NavigationView {
             List {
-                ForEach(viewModel.pantryItems) { item in
+                ForEach(viewModel.filteredItems) { item in
                     PantryItemRow(item: item)
                 }
-                .onDelete(perform: viewModel.deleteItems)
+                .onDelete(perform: viewModel.deleteItem)
             }
-            .navigationTitle("My Pantry")
+            .searchable(text: $viewModel.searchText)
+            .navigationTitle("Pantry")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingAddItem = true }) {
+                    Button(action: {
+                        showingAddItem = true
+                    }) {
                         Image(systemName: "plus")
                     }
                 }
@@ -35,23 +43,32 @@ struct PantryItemRow: View {
             VStack(alignment: .leading) {
                 Text(item.name)
                     .font(.headline)
-                Text("Quantity: \(item.quantity)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack {
+                    Text("\(item.quantity) \(item.unit)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    if let expirationDate = item.expirationDate {
+                        Text("• Expires: \(expirationDate, style: .date)")
+                            .font(.caption)
+                            .foregroundColor(item.isExpired ? .red : (item.isExpiringSoon ? .orange : .secondary))
+                    }
+                }
             }
+            
             Spacer()
-            if let expiryDate = item.expiryDate {
-                Text(expiryDate, style: .date)
-                    .font(.caption)
-                    .foregroundColor(item.isExpiringSoon ? .red : .secondary)
-            }
+            
+            Text(item.category)
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.secondary.opacity(0.2))
+                .cornerRadius(4)
         }
         .padding(.vertical, 4)
     }
-}//
-//  PantryView.swift
-//  Pantry Pal
-//
-//  Created by Christopher Fabian on 8/1/25.
-//
+}
 
+#Preview {
+    PantryView()
+}
